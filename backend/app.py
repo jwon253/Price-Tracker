@@ -24,6 +24,8 @@ login_manager.init_app(app)
 
 limiter = Limiter(key_func=get_remote_address, app=app)
 
+init_db()
+
 
 def get_db():
     if "db" not in g:
@@ -147,5 +149,4 @@ def refresh_product(product_id):
 
 
 if __name__ == "__main__":
-    init_db()
     app.run(debug=True)
