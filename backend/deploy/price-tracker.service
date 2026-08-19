@@ -1,0 +1,12 @@
+[Unit]
+Description=Price Tracker
+After=network.target
+
+[Service]
+User=jay
+WorkingDirectory=/home/jay/Price-Tracker/backend
+ExecStart=/home/jay/Price-Tracker/.venv/bin/gunicorn -w 2 -b 127.0.0.1:5000 app:app
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
