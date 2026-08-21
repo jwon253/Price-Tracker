@@ -9,8 +9,18 @@ from scraper import scrape_product
 MIN_DELAY_SECONDS = 0
 MAX_DELAY_SECONDS = 60
 
+# Cron triggers this at a fixed time, but always starting at the exact same
+# time every day is itself a bot-like signature. Sleeping a random amount
+# before doing anything spreads the actual scrape start across a window
+# instead of a fixed instant.
+STARTUP_JITTER_MAX_SECONDS = 90 * 60
+
 
 def run():
+    startup_delay = random.uniform(0, STARTUP_JITTER_MAX_SECONDS)
+    print(f"[wait] startup jitter: sleeping {startup_delay / 60:.1f} min before starting")
+    time.sleep(startup_delay)
+
     init_db()
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row

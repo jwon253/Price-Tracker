@@ -23,6 +23,8 @@ def scrape_product(url):
         return scrape_pbtech(url)
     if domain == "connor.com.au":
         return scrape_connor(url)
+    if domain == "footlocker.co.nz":
+        return scrape_footlocker(url)
 
     raise ValueError(f"No scraper available for '{domain}'")
 
@@ -200,6 +202,72 @@ def scrape_connor(url):
         "price": price,
         "stock_status": CONNOR_STOCK_STATUS.get(product.get("stock_status"), "unknown"),
         "image_url": product.get("small_image", {}).get("url"),
+    }
+
+
+# ---------- Foot Locker ----------
+
+FOOTLOCKER_AVAILABILITY_TO_STOCK_STATUS = {
+    "https://schema.org/InStock": "in_stock",
+    "http://schema.org/InStock": "in_stock",
+    "https://schema.org/LimitedAvailability": "low_stock",
+    "http://schema.org/LimitedAvailability": "low_stock",
+    "https://schema.org/OutOfStock": "out_of_stock",
+    "http://schema.org/OutOfStock": "out_of_stock",
+    "https://schema.org/Discontinued": "out_of_stock",
+    "http://schema.org/Discontinued": "out_of_stock",
+}
+
+
+def scrape_footlocker(url):
+    """Foot Locker embeds a schema.org ProductGroup (not a plain Product)
+    with one "offers"-bearing variant per colour in hasVariant. The URL
+    always points at one specific variant, identified by its sku, so we
+    have to pick that variant out rather than reading a single top-level
+    offer like a normal Product page."""
+    response = requests.get(url, headers=HEADERS)
+    response.raise_for_status()
+
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    product_group = None
+    for script in soup.find_all("script", {"type": "application/ld+json"}):
+        try:
+            data = json.loads(script.string)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(data, dict) and data.get("@type") == "ProductGroup":
+            product_group = data
+            break
+
+    if product_group is None:
+        raise ValueError(f"No ProductGroup JSON-LD found at {url}")
+
+    variants = product_group.get("hasVariant") or []
+    target_sku = product_group.get("sku")
+    variant = next((v for v in variants if v.get("sku") == target_sku), None)
+    if variant is None:
+        variant = variants[0] if variants else None
+    if variant is None:
+        raise ValueError(f"No product variant found at {url}")
+
+    offers = variant.get("offers")
+    seller = offers.get("seller") if offers else None
+    store = seller.get("name") if isinstance(seller, dict) else "Foot Locker"
+
+    availability = offers.get("availability") if offers else None
+    stock_status = FOOTLOCKER_AVAILABILITY_TO_STOCK_STATUS.get(availability, "unknown")
+
+    name = product_group.get("name")
+    if variant.get("color"):
+        name = f"{name} ({variant['color']})"
+
+    return {
+        "name": name,
+        "store": store,
+        "price": offers.get("price") if offers else None,
+        "stock_status": stock_status,
+        "image_url": extract_image_url(variant.get("image") or product_group.get("image")),
     }
 
 

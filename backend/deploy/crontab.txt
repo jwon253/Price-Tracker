@@ -1,3 +1,6 @@
-# Price Tracker daily scrape — runs every day at 7:00am
+# Price Tracker daily scrape — triggers at 6:30am, then daily_scrape.py
+# itself sleeps a random 0-90 min before doing any work, so the actual
+# scrape start time varies across a 6:30am-8:00am window each day instead
+# of firing at a fixed instant every time.
 # Install with: crontab -e, then paste this line in
-0 7 * * * /home/jay/Price-Tracker/.venv/bin/python /home/jay/Price-Tracker/backend/daily_scrape.py >> /home/jay/Price-Tracker/backend/daily_scrape.log 2>&1
+30 6 * * * /home/jay/Price-Tracker/.venv/bin/python /home/jay/Price-Tracker/backend/daily_scrape.py >> /home/jay/Price-Tracker/backend/daily_scrape.log 2>&1
