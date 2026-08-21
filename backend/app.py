@@ -110,6 +110,21 @@ def add_product():
     return jsonify({"id": product_id, "url": url, **scraped}), 201
 
 
+@app.route("/api/products/<int:product_id>", methods=["DELETE"])
+@login_required
+def delete_product(product_id):
+    db = get_db()
+    product = db.execute("SELECT id FROM products WHERE id = ?", (product_id,)).fetchone()
+    if product is None:
+        return jsonify({"error": "Product not found"}), 404
+
+    db.execute("DELETE FROM price_history WHERE product_id = ?", (product_id,))
+    db.execute("DELETE FROM products WHERE id = ?", (product_id,))
+    db.commit()
+
+    return jsonify({"ok": True})
+
+
 @app.route("/api/products/<int:product_id>/history", methods=["GET"])
 @login_required
 def product_history(product_id):
