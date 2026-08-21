@@ -85,9 +85,16 @@ def list_products():
 @login_required
 def add_product():
     data = request.get_json(silent=True) or {}
-    url = data.get("url")
+    url = (data.get("url") or "").strip()
     if not url:
         return jsonify({"error": "url is required"}), 400
+
+    db = get_db()
+    existing = db.execute(
+        "SELECT id FROM products WHERE rtrim(url, '/') = rtrim(?, '/')", (url,)
+    ).fetchone()
+    if existing is not None:
+        return jsonify({"error": "This product is already being tracked"}), 409
 
     try:
         scraped = scrape_product(url)
@@ -99,7 +106,6 @@ def add_product():
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-    db = get_db()
     cursor = db.execute(
         "INSERT INTO products (name, url, store, added_at, image_url) VALUES (?, ?, ?, ?, ?)",
         (scraped["name"], url, scraped["store"], now, scraped["image_url"]),

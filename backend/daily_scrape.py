@@ -1,8 +1,13 @@
+import random
 import sqlite3
+import time
 from datetime import datetime, timezone
 
 from models import DB_PATH, init_db, insert_price_check, update_product_image
 from scraper import scrape_product
+
+MIN_DELAY_SECONDS = 0
+MAX_DELAY_SECONDS = 60
 
 
 def run():
@@ -12,7 +17,12 @@ def run():
 
     products = conn.execute("SELECT id, name, url FROM products").fetchall()
 
-    for product in products:
+    for i, product in enumerate(products):
+        if i > 0:
+            delay = random.uniform(MIN_DELAY_SECONDS, MAX_DELAY_SECONDS)
+            print(f"[wait] sleeping {delay / 60:.1f} min before next request")
+            time.sleep(delay)
+
         try:
             scraped = scrape_product(product["url"])
         except Exception as exc:
