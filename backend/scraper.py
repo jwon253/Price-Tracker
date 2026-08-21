@@ -87,13 +87,43 @@ def scrape_pbtech(url):
     availability = offers.get("availability") if offers else None
     stock_status = PBTECH_AVAILABILITY_TO_STOCK_STATUS.get(availability, "unknown")
 
+    regular_price = offers.get("price") if offers else None
+    price = extract_pbtech_promo_price(soup)
+    if price is None:
+        price = regular_price
+
     return {
         "name": product.get("name"),
         "store": store,
-        "price": offers.get("price") if offers else None,
+        "price": price,
         "stock_status": stock_status,
         "image_url": extract_image_url(product.get("image")),
     }
+
+
+def extract_pbtech_promo_price(soup):
+    """PB Tech often masks the real selling price behind a "with promo
+    code" banner instead of showing it as the plain listed price. When
+    present, that's the price a shopper actually pays, so prefer it over
+    the JSON-LD regular price. Returns None if no promo is running (the
+    banner then just reads "PB Tech price" with no dollar amount)."""
+    label = soup.find("div", class_="item-price-label")
+    if label is None:
+        return None
+
+    ginc = label.find("div", class_="ginc")
+    if ginc is None:
+        return None
+
+    amount = ginc.find("span", class_="fw-semibold")
+    if amount is None:
+        return None
+
+    text = amount.get_text(strip=True).replace("$", "").replace(",", "")
+    try:
+        return float(text)
+    except ValueError:
+        return None
 
 
 # ---------- Connor ----------
