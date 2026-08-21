@@ -10,7 +10,7 @@ from flask_limiter.util import get_remote_address
 from flask_login import login_required, login_user, logout_user
 
 from auth import User, login_manager, verify_credentials
-from models import DB_PATH, init_db, insert_price_check
+from models import DB_PATH, init_db, insert_price_check, update_product_image
 from scraper import scrape_product
 
 load_dotenv()
@@ -68,7 +68,7 @@ def logout():
 def list_products():
     db = get_db()
     rows = db.execute("""
-        SELECT p.id, p.name, p.url, p.store, ph.price, ph.stock_status, ph.checked_at
+        SELECT p.id, p.name, p.url, p.store, p.image_url, ph.price, ph.stock_status, ph.checked_at
         FROM products p
         LEFT JOIN price_history ph ON ph.id = (
             SELECT id FROM price_history
@@ -101,8 +101,8 @@ def add_product():
 
     db = get_db()
     cursor = db.execute(
-        "INSERT INTO products (name, url, store, added_at) VALUES (?, ?, ?, ?)",
-        (scraped["name"], url, scraped["store"], now),
+        "INSERT INTO products (name, url, store, added_at, image_url) VALUES (?, ?, ?, ?, ?)",
+        (scraped["name"], url, scraped["store"], now, scraped["image_url"]),
     )
     product_id = cursor.lastrowid
     insert_price_check(db, product_id, scraped, now)
@@ -144,6 +144,7 @@ def refresh_product(product_id):
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     insert_price_check(db, product_id, scraped, now)
+    update_product_image(db, product_id, scraped["image_url"])
 
     return jsonify({"id": product_id, "checked_at": now, **scraped})
 

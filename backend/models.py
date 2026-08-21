@@ -25,8 +25,18 @@ CREATE TABLE IF NOT EXISTS price_history (
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     conn.executescript(SCHEMA)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(products)")}
+    if "image_url" not in columns:
+        conn.execute("ALTER TABLE products ADD COLUMN image_url TEXT")
     conn.commit()
     conn.close()
+
+
+def update_product_image(conn, product_id, image_url):
+    if image_url is None:
+        return
+    conn.execute("UPDATE products SET image_url = ? WHERE id = ?", (image_url, product_id))
+    conn.commit()
 
 
 def insert_price_check(conn, product_id, scraped, checked_at):

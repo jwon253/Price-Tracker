@@ -57,7 +57,20 @@ def scrape_product(url):
         "store": store,
         "price": offers.get("price") if offers else None,
         "stock_status": stock_status,
+        "image_url": extract_image_url(product.get("image")),
     }
+
+
+def extract_image_url(image):
+    """JSON-LD "image" can be a URL string, a list of URL strings, an
+    ImageObject dict, or a list of those — normalize to a single URL."""
+    if isinstance(image, list):
+        image = image[0] if image else None
+    if isinstance(image, dict):
+        return image.get("url")
+    if isinstance(image, str):
+        return image
+    return None
 
 
 if __name__ == "__main__":

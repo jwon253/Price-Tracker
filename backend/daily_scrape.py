@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import datetime, timezone
 
-from models import DB_PATH, init_db, insert_price_check
+from models import DB_PATH, init_db, insert_price_check, update_product_image
 from scraper import scrape_product
 
 
@@ -21,6 +21,7 @@ def run():
 
         checked_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         insert_price_check(conn, product["id"], scraped, checked_at)
+        update_product_image(conn, product["id"], scraped["image_url"])
         print(f"[ok] {product['name']}: ${scraped['price']} ({scraped['stock_status']})")
 
     conn.close()
