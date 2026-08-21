@@ -25,6 +25,8 @@ def scrape_product(url):
         return scrape_connor(url)
     if domain == "footlocker.co.nz":
         return scrape_footlocker(url)
+    if domain == "computerlounge.co.nz":
+        return scrape_computerlounge(url)
 
     raise ValueError(f"No scraper available for '{domain}'")
 
@@ -268,6 +270,61 @@ def scrape_footlocker(url):
         "price": offers.get("price") if offers else None,
         "stock_status": stock_status,
         "image_url": extract_image_url(variant.get("image") or product_group.get("image")),
+    }
+
+
+# ---------- Computer Lounge ----------
+
+COMPUTERLOUNGE_AVAILABILITY_TO_STOCK_STATUS = {
+    "https://schema.org/InStock": "in_stock",
+    "http://schema.org/InStock": "in_stock",
+    "https://schema.org/LimitedAvailability": "low_stock",
+    "http://schema.org/LimitedAvailability": "low_stock",
+    "https://schema.org/OutOfStock": "out_of_stock",
+    "http://schema.org/OutOfStock": "out_of_stock",
+    "https://schema.org/Discontinued": "out_of_stock",
+    "http://schema.org/Discontinued": "out_of_stock",
+}
+
+
+def scrape_computerlounge(url):
+    """Computer Lounge (Shopify) embeds schema.org Product JSON-LD, but
+    unlike PB Tech's single offer, Shopify lists "offers" as an array (one
+    per variant) — the first entry matches the base product URL."""
+    response = requests.get(url, headers=HEADERS)
+    response.raise_for_status()
+
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    product = None
+    for script in soup.find_all("script", {"type": "application/ld+json"}):
+        try:
+            data = json.loads(script.string)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(data, dict) and data.get("@type") == "Product":
+            product = data
+            break
+
+    if product is None:
+        raise ValueError(f"No Product JSON-LD found at {url}")
+
+    offers = product.get("offers")
+    if isinstance(offers, list):
+        offers = offers[0] if offers else None
+
+    seller = offers.get("seller") if offers else None
+    store = seller.get("name") if isinstance(seller, dict) else "Computer Lounge"
+
+    availability = offers.get("availability") if offers else None
+    stock_status = COMPUTERLOUNGE_AVAILABILITY_TO_STOCK_STATUS.get(availability, "unknown")
+
+    return {
+        "name": product.get("name"),
+        "store": store,
+        "price": offers.get("price") if offers else None,
+        "stock_status": stock_status,
+        "image_url": extract_image_url(product.get("image")),
     }
 
 
