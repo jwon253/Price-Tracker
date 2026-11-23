@@ -483,6 +483,9 @@
 
   .card.pinned { border-color: var(--accent); }
 
+  #product-list .card { cursor: grab; }
+  #product-list .card.dragging { opacity: 0.4; cursor: grabbing; }
+
   .card.add {
     border-style: dashed;
     border-color: var(--ink-faint);
@@ -930,6 +933,10 @@
       const card = document.createElement("article");
       const pinned = Boolean(product.pinned);
       card.className = pinned ? "card pinned" : "card";
+      card.draggable = true;
+      card.dataset.id = product.id;
+      card.dataset.pinned = pinned ? "1" : "0";
+      card.title = "Drag to reorder";
       card.innerHTML = `
         <div class="thumb">${THUMB_PLACEHOLDER}</div>
         <div class="card-info">
@@ -962,6 +969,7 @@
         img.src = product.image_url;
         img.alt = fullName;
         img.loading = "lazy";
+        img.draggable = false; // drag the whole card, not the image
         img.onerror = () => { thumb.innerHTML = THUMB_PLACEHOLDER; };
         thumb.innerHTML = "";
         thumb.appendChild(img);
@@ -1312,6 +1320,69 @@
       }
     } catch {
       btn.disabled = false;
+    }
+  });
+
+  // ---------- Drag to reorder ----------
+  // Cards can only move within their own group (pinned or unpinned), since
+  // pinned products always stay at the top.
+  let draggedCard = null;
+  let orderBeforeDrag = "";
+
+  function cardOrder() {
+    return Array.from(productList.querySelectorAll(".card[data-id]"), (card) => Number(card.dataset.id));
+  }
+
+  productList.addEventListener("dragstart", (event) => {
+    const card = event.target.closest(".card[data-id]");
+    if (!card) return;
+    draggedCard = card;
+    orderBeforeDrag = cardOrder().join(",");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", card.dataset.id);
+    // Defer so the drag image is captured before the card fades.
+    requestAnimationFrame(() => card.classList.add("dragging"));
+  });
+
+  productList.addEventListener("dragover", (event) => {
+    if (!draggedCard) return;
+    const target = event.target.closest(".card[data-id]");
+    if (!target || target.dataset.pinned !== draggedCard.dataset.pinned) return;
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (target === draggedCard) return;
+
+    // In a multi-column grid, the left/right half decides; in one column, top/bottom.
+    const rect = target.getBoundingClientRect();
+    const columns = getComputedStyle(productList.parentElement).gridTemplateColumns.split(" ").length;
+    const after = columns > 1
+      ? event.clientX > rect.left + rect.width / 2
+      : event.clientY > rect.top + rect.height / 2;
+    productList.insertBefore(draggedCard, after ? target.nextSibling : target);
+  });
+
+  productList.addEventListener("drop", (event) => {
+    if (draggedCard) event.preventDefault();
+  });
+
+  productList.addEventListener("dragend", async () => {
+    if (!draggedCard) return;
+    draggedCard.classList.remove("dragging");
+    draggedCard = null;
+
+    const ids = cardOrder();
+    if (ids.join(",") === orderBeforeDrag) return;
+
+    try {
+      const res = await fetch("/api/products/order", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) loadProducts(); // put the saved order back
+    } catch {
+      loadProducts();
     }
   });
 

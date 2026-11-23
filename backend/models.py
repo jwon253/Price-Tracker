@@ -30,8 +30,19 @@ def init_db():
         conn.execute("ALTER TABLE products ADD COLUMN image_url TEXT")
     if "pinned" not in columns:
         conn.execute("ALTER TABLE products ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+    if "position" not in columns:
+        # Seed the manual order from the previous newest-first order so the
+        # dashboard looks the same until something is dragged.
+        conn.execute("ALTER TABLE products ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+        ids = [row[0] for row in conn.execute("SELECT id FROM products ORDER BY added_at DESC")]
+        conn.executemany("UPDATE products SET position = ? WHERE id = ?", list(enumerate(ids)))
     conn.commit()
     conn.close()
+
+
+def top_position(conn):
+    """Position that puts a newly added product first in the manual order."""
+    return conn.execute("SELECT COALESCE(MIN(position), 0) - 1 FROM products").fetchone()[0]
 
 
 def update_product_image(conn, product_id, image_url):

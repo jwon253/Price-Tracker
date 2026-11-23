@@ -13,7 +13,7 @@ from flask_limiter.util import get_remote_address
 from flask_login import login_required, login_user, logout_user
 
 from auth import User, login_manager, verify_credentials
-from models import DB_PATH, init_db, insert_price_check, update_product_image
+from models import DB_PATH, init_db, insert_price_check, top_position, update_product_image
 from scraper import STORES, scrape_product, store_domain
 
 load_dotenv()
@@ -80,9 +80,27 @@ def list_products():
             ORDER BY checked_at DESC
             LIMIT 1
         )
-        ORDER BY p.pinned DESC, p.added_at DESC
+        ORDER BY p.pinned DESC, p.position, p.added_at DESC
     """).fetchall()
     return jsonify([dict(row) for row in rows])
+
+
+@app.route("/api/products/order", methods=["PUT"])
+@login_required
+def reorder_products():
+    data = request.get_json(silent=True) or {}
+    ids = data.get("ids")
+    if (
+        not isinstance(ids, list)
+        or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids)
+        or len(set(ids)) != len(ids)
+    ):
+        return jsonify({"error": "ids must be a list of unique product ids"}), 400
+
+    db = get_db()
+    db.executemany("UPDATE products SET position = ? WHERE id = ?", list(enumerate(ids)))
+    db.commit()
+    return jsonify({"ok": True})
 
 
 @app.route("/api/products/<int:product_id>/pin", methods=["POST"])
@@ -253,8 +271,8 @@ def import_csv():
         product_id = product_ids.get(key)
         if product_id is None:
             cursor = db.execute(
-                "INSERT INTO products (name, url, store, added_at) VALUES (?, ?, ?, ?)",
-                (record["name"], record["url"], record["store"], first_seen[key]),
+                "INSERT INTO products (name, url, store, added_at, position) VALUES (?, ?, ?, ?, ?)",
+                (record["name"], record["url"], record["store"], first_seen[key], top_position(db)),
             )
             product_id = product_ids[key] = cursor.lastrowid
             products_created += 1
@@ -304,8 +322,8 @@ def add_product():
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     cursor = db.execute(
-        "INSERT INTO products (name, url, store, added_at, image_url) VALUES (?, ?, ?, ?, ?)",
-        (scraped["name"], url, scraped["store"], now, scraped["image_url"]),
+        "INSERT INTO products (name, url, store, added_at, image_url, position) VALUES (?, ?, ?, ?, ?, ?)",
+        (scraped["name"], url, scraped["store"], now, scraped["image_url"], top_position(db)),
     )
     product_id = cursor.lastrowid
     insert_price_check(db, product_id, scraped, now)

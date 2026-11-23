@@ -81,6 +81,7 @@ All endpoints except `/api/login` require you to be logged in (session cookie).
 | `POST` | `/api/import` | Upload an exported CSV (`file` field). Products are matched by URL, rows already present are skipped, and nothing is imported if any row is invalid |
 | `GET` | `/api/products` | All products with their latest price and stock status |
 | `POST` | `/api/products` | `{"url"}`: scrape and start tracking a product |
+| `PUT` | `/api/products/order` | `{"ids": [3, 1, 2]}`: save the dashboard order (pinned products still come first) |
 | `POST` | `/api/products/<id>/pin` | `{"pinned": true}` or `false`: pinned products are listed first |
 | `DELETE` | `/api/products/<id>` | Stop tracking a product and delete its history |
 | `GET` | `/api/products/<id>/history` | The product plus every recorded price check |
