@@ -28,6 +28,8 @@ def init_db():
     columns = {row[1] for row in conn.execute("PRAGMA table_info(products)")}
     if "image_url" not in columns:
         conn.execute("ALTER TABLE products ADD COLUMN image_url TEXT")
+    if "pinned" not in columns:
+        conn.execute("ALTER TABLE products ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
     conn.commit()
     conn.close()
 

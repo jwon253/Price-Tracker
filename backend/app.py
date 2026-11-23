@@ -72,7 +72,7 @@ def logout():
 def list_products():
     db = get_db()
     rows = db.execute("""
-        SELECT p.id, p.name, p.url, p.store, p.image_url, ph.price, ph.stock_status, ph.checked_at
+        SELECT p.id, p.name, p.url, p.store, p.image_url, p.pinned, ph.price, ph.stock_status, ph.checked_at
         FROM products p
         LEFT JOIN price_history ph ON ph.id = (
             SELECT id FROM price_history
@@ -80,9 +80,26 @@ def list_products():
             ORDER BY checked_at DESC
             LIMIT 1
         )
-        ORDER BY p.added_at DESC
+        ORDER BY p.pinned DESC, p.added_at DESC
     """).fetchall()
     return jsonify([dict(row) for row in rows])
+
+
+@app.route("/api/products/<int:product_id>/pin", methods=["POST"])
+@login_required
+def pin_product(product_id):
+    data = request.get_json(silent=True) or {}
+    pinned = data.get("pinned")
+    if not isinstance(pinned, bool):
+        return jsonify({"error": "pinned must be true or false"}), 400
+
+    db = get_db()
+    cursor = db.execute("UPDATE products SET pinned = ? WHERE id = ?", (int(pinned), product_id))
+    if cursor.rowcount == 0:
+        return jsonify({"error": "Product not found"}), 404
+    db.commit()
+
+    return jsonify({"id": product_id, "pinned": pinned})
 
 
 @app.route("/api/stores", methods=["GET"])

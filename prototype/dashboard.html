@@ -461,6 +461,28 @@
 
   .delete-btn:disabled { opacity: 0.5; cursor: default; }
 
+  .card-actions { display: flex; align-items: center; gap: 4px; }
+
+  .pin-btn {
+    background: none;
+    border: none;
+    color: var(--ink-faint);
+    cursor: pointer;
+    padding: 2px;
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .pin-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+  .pin-btn:hover { color: var(--accent); }
+  .pin-btn.active { color: var(--accent); }
+  .pin-btn.active svg { fill: currentColor; }
+  .pin-btn:disabled { opacity: 0.5; cursor: default; }
+
+  .card.pinned { border-color: var(--accent); }
+
   .card.add {
     border-style: dashed;
     border-color: var(--ink-faint);
@@ -906,7 +928,8 @@
     for (const product of products) {
       const stock = stockInfo(product.stock_status);
       const card = document.createElement("article");
-      card.className = "card";
+      const pinned = Boolean(product.pinned);
+      card.className = pinned ? "card pinned" : "card";
       card.innerHTML = `
         <div class="thumb">${THUMB_PLACEHOLDER}</div>
         <div class="card-info">
@@ -917,9 +940,15 @@
         <div class="status">
           <span class="stock-pill ${stock.cls}">${stock.text}</span>
           <span class="checked"></span>
-          <button type="button" class="delete-btn" data-id="${product.id}" title="Remove product">
-            <svg viewBox="0 0 24 24"><path d="M4 7 L20 7"/><path d="M9 7 L9 4 L15 4 L15 7"/><path d="M6 7 L7 20 L17 20 L18 7"/></svg>
-          </button>
+          <div class="card-actions">
+            <button type="button" class="pin-btn${pinned ? " active" : ""}" data-id="${product.id}" data-pinned="${pinned ? 1 : 0}"
+                    title="${pinned ? "Unpin" : "Pin to top"}" aria-pressed="${pinned}">
+              <svg viewBox="0 0 24 24"><path d="M9 3 L15 3 L14 9 L18 13 L6 13 L10 9 Z"/><line x1="12" y1="13" x2="12" y2="21"/></svg>
+            </button>
+            <button type="button" class="delete-btn" data-id="${product.id}" title="Remove product">
+              <svg viewBox="0 0 24 24"><path d="M4 7 L20 7"/><path d="M9 7 L9 4 L15 4 L15 7"/><path d="M6 7 L7 20 L17 20 L18 7"/></svg>
+            </button>
+          </div>
         </div>
       `;
       const fullName = product.name || "Untitled product";
@@ -1244,6 +1273,26 @@
     const nameBtn = event.target.closest(".name");
     if (nameBtn) {
       location.hash = `#/product/${nameBtn.dataset.id}`;
+      return;
+    }
+
+    const pinBtn = event.target.closest(".pin-btn");
+    if (pinBtn) {
+      pinBtn.disabled = true;
+      try {
+        const res = await fetch(`/api/products/${pinBtn.dataset.id}/pin`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pinned: pinBtn.dataset.pinned !== "1" }),
+        });
+        if (res.ok) {
+          loadProducts();
+        } else {
+          pinBtn.disabled = false;
+        }
+      } catch {
+        pinBtn.disabled = false;
+      }
       return;
     }
 
