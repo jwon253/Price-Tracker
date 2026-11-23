@@ -30,6 +30,9 @@ def init_db():
         conn.execute("ALTER TABLE products ADD COLUMN image_url TEXT")
     if "pinned" not in columns:
         conn.execute("ALTER TABLE products ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+    if "hidden" not in columns:
+        # Hidden products are left out of the public (logged-out) view.
+        conn.execute("ALTER TABLE products ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
     if "position" not in columns:
         # Seed the manual order from the previous newest-first order so the
         # dashboard looks the same until something is dragged.

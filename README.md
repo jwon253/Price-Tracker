@@ -70,7 +70,7 @@ The job starts at 6:30am, waits a random 0–90 minutes, then scrapes. Output go
 
 ## API
 
-All endpoints except `/api/login` require you to be logged in (session cookie).
+Reading endpoints (`/api/session`, `GET /api/products`, `GET /api/products/<id>/history`, `/api/stores`) are public, and logged-out visitors don't see hidden products. Everything that changes data, plus CSV export, requires you to be logged in (session cookie).
 
 | Method | Path | Description |
 |---|---|---|
@@ -82,6 +82,8 @@ All endpoints except `/api/login` require you to be logged in (session cookie).
 | `GET` | `/api/products` | All products with their latest price and stock status |
 | `POST` | `/api/products` | `{"url"}`: scrape and start tracking a product |
 | `PUT` | `/api/products/order` | `{"ids": [3, 1, 2]}`: save the dashboard order (pinned products still come first) |
+| `GET` | `/api/session` | `{"logged_in": true/false}` |
+| `POST` | `/api/products/<id>/hidden` | `{"hidden": true}` or `false`: hide a product from logged-out visitors |
 | `POST` | `/api/products/<id>/pin` | `{"pinned": true}` or `false`: pinned products are listed first |
 | `DELETE` | `/api/products/<id>` | Stop tracking a product and delete its history |
 | `GET` | `/api/products/<id>/history` | The product plus every recorded price check |

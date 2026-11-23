@@ -505,7 +505,34 @@
 
   .card.pinned { border-color: var(--accent); }
 
-  #product-list .card { cursor: grab; }
+  .hide-btn {
+    background: none;
+    border: none;
+    color: var(--ink-faint);
+    cursor: pointer;
+    padding: 2px;
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .hide-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+  .hide-btn:hover, .hide-btn.active { color: var(--accent); }
+  .hide-btn:disabled { opacity: 0.5; cursor: default; }
+
+  .card.is-hidden { border-style: dashed; }
+  .card.is-hidden .thumb, .card.is-hidden .card-info { opacity: 0.55; }
+
+  /* Logged-out (public) view: read-only, so all editing controls go. */
+  body.public #add-card,
+  body.public .topbar-actions,
+  body.public .card-actions,
+  body.public #import-status,
+  body.public #logout-btn,
+  body:not(.public) #login-btn { display: none !important; }
+
+  body:not(.public) #product-list .card { cursor: grab; }
   #product-list .card.dragging { opacity: 0.4; cursor: grabbing; }
 
   .card.add {
@@ -745,6 +772,7 @@
     <label for="password">Password</label>
     <input type="password" id="password" name="password" autocomplete="current-password" required>
     <button class="btn-primary" type="submit">Log in</button>
+    <button class="btn-secondary" type="button" id="login-cancel">Back to dashboard</button>
     <p class="form-error" id="login-error"></p>
   </form>
 </div>
@@ -762,10 +790,6 @@
       <svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>
       Dashboard
     </a>
-    <a class="nav-item" href="#">
-      <svg viewBox="0 0 24 24"><path d="M4 4 L12 4 L20 12 L12 20 L4 12 Z"/><circle cx="8" cy="8" r="1.4" fill="currentColor" stroke="none"/></svg>
-      Products
-    </a>
     <a class="nav-item" href="#/stores" data-view="stores">
       <svg viewBox="0 0 24 24"><path d="M3 9 L4 4 L20 4 L21 9"/><path d="M4 9 L20 9 L20 20 L4 20 Z"/><path d="M9 20 L9 14 L15 14 L15 20"/></svg>
       Stores
@@ -777,6 +801,7 @@
 
     <div class="sidebar-footer">
       <button type="button" class="logout-btn" id="logout-btn">Log out</button>
+      <button type="button" class="logout-btn" id="login-btn">Log in</button>
     </div>
   </aside>
 
@@ -878,6 +903,11 @@
   const loginForm = document.getElementById("login-form");
   const loginError = document.getElementById("login-error");
   const logoutBtn = document.getElementById("logout-btn");
+  const loginBtn = document.getElementById("login-btn");
+  const loginCancel = document.getElementById("login-cancel");
+
+  // Logged-out visitors get a read-only view; the server enforces this too.
+  let loggedIn = false;
 
   const topbarSub = document.getElementById("topbar-sub");
   const productCount = document.getElementById("product-count");
@@ -1008,7 +1038,9 @@
     if (products.length === 0) {
       const empty = document.createElement("p");
       empty.className = "empty";
-      empty.textContent = "No products tracked yet — add one to get started.";
+      empty.textContent = loggedIn
+        ? "No products tracked yet — add one to get started."
+        : "No products to show yet.";
       productList.appendChild(empty);
       return;
     }
@@ -1017,11 +1049,12 @@
       const stock = stockInfo(product.stock_status);
       const card = document.createElement("article");
       const pinned = Boolean(product.pinned);
-      card.className = pinned ? "card pinned" : "card";
-      card.draggable = true;
+      const hidden = Boolean(product.hidden);
+      card.className = "card" + (pinned ? " pinned" : "") + (hidden ? " is-hidden" : "");
+      card.draggable = loggedIn;
       card.dataset.id = product.id;
       card.dataset.pinned = pinned ? "1" : "0";
-      card.title = "Drag to reorder";
+      if (loggedIn) card.title = "Drag to reorder";
       card.innerHTML = `
         <div class="thumb">${THUMB_PLACEHOLDER}</div>
         <div class="card-info">
@@ -1034,6 +1067,10 @@
           <span class="stock-pill ${stock.cls}">${stock.text}</span>
           <span class="checked"></span>
           <div class="card-actions">
+            <button type="button" class="hide-btn${hidden ? " active" : ""}" data-id="${product.id}" data-hidden="${hidden ? 1 : 0}"
+                    title="${hidden ? "Hidden from logged-out visitors — click to show" : "Hide from logged-out visitors"}" aria-pressed="${hidden}">
+              <svg viewBox="0 0 24 24"><path d="M2 12 C5 6.5 19 6.5 22 12 C19 17.5 5 17.5 2 12 Z"/><circle cx="12" cy="12" r="3"/>${hidden ? '<line x1="4" y1="4" x2="20" y2="20"/>' : ""}</svg>
+            </button>
             <button type="button" class="pin-btn${pinned ? " active" : ""}" data-id="${product.id}" data-pinned="${pinned ? 1 : 0}"
                     title="${pinned ? "Unpin" : "Pin to top"}" aria-pressed="${pinned}">
               <svg viewBox="0 0 24 24"><path d="M9 3 L15 3 L14 9 L18 13 L6 13 L10 9 Z"/><line x1="12" y1="13" x2="12" y2="21"/></svg>
@@ -1292,12 +1329,11 @@
   }
 
   async function loadProducts() {
-    const res = await fetch("/api/products");
-    if (res.status === 401) {
-      showLogin();
-      return;
-    }
-    const products = await res.json();
+    const [sessionRes, res] = await Promise.all([fetch("/api/session"), fetch("/api/products")]);
+    const session = sessionRes.ok ? await sessionRes.json() : { logged_in: false };
+    loggedIn = Boolean(session.logged_in);
+    document.body.classList.toggle("public", !loggedIn);
+    const products = res.ok ? await res.json() : [];
     showApp();
     route(products);
   }
@@ -1378,6 +1414,26 @@
       return;
     }
 
+    const hideBtn = event.target.closest(".hide-btn");
+    if (hideBtn) {
+      hideBtn.disabled = true;
+      try {
+        const res = await fetch(`/api/products/${hideBtn.dataset.id}/hidden`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hidden: hideBtn.dataset.hidden !== "1" }),
+        });
+        if (res.ok) {
+          loadProducts();
+        } else {
+          hideBtn.disabled = false;
+        }
+      } catch {
+        hideBtn.disabled = false;
+      }
+      return;
+    }
+
     const pinBtn = event.target.closest(".pin-btn");
     if (pinBtn) {
       pinBtn.disabled = true;
@@ -1429,7 +1485,7 @@
 
   productList.addEventListener("dragstart", (event) => {
     const card = event.target.closest(".card[data-id]");
-    if (!card) return;
+    if (!card || !loggedIn) return;
     draggedCard = card;
     orderBeforeDrag = cardOrder().join(",");
     event.dataTransfer.effectAllowed = "move";
@@ -1503,7 +1559,19 @@
 
   logoutBtn.addEventListener("click", async () => {
     await fetch("/api/logout", { method: "POST" });
+    importStatus.hidden = true;
+    loadProducts(); // back to the public view
+  });
+
+  loginBtn.addEventListener("click", () => {
+    loginError.textContent = "";
     showLogin();
+  });
+
+  loginCancel.addEventListener("click", () => {
+    loginForm.reset();
+    loginError.textContent = "";
+    showApp();
   });
 
   function showImportStatus(message, details, isError) {

@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from flask import Flask, Response, g, jsonify, request, send_file
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from flask_login import login_required, login_user, logout_user
+from flask_login import current_user, login_required, login_user, logout_user
 
 from auth import User, login_manager, verify_credentials
 from models import DB_PATH, init_db, insert_price_check, top_position, update_product_image
@@ -68,12 +68,22 @@ def logout():
     return jsonify({"ok": True})
 
 
+@app.route("/api/session", methods=["GET"])
+def session_status():
+    return jsonify({"logged_in": current_user.is_authenticated})
+
+
+# Reading products is public; logged-out visitors don't see hidden products.
+# Everything that changes data still requires login.
+def visible_filter(alias="p"):
+    return "" if current_user.is_authenticated else f"WHERE {alias}.hidden = 0"
+
+
 @app.route("/api/products", methods=["GET"])
-@login_required
 def list_products():
     db = get_db()
-    rows = db.execute("""
-        SELECT p.id, p.name, p.url, p.store, p.image_url, p.pinned,
+    rows = db.execute(f"""
+        SELECT p.id, p.name, p.url, p.store, p.image_url, p.pinned, p.hidden,
                ph.price, ph.regular_price, ph.stock_status, ph.checked_at
         FROM products p
         LEFT JOIN price_history ph ON ph.id = (
@@ -82,6 +92,7 @@ def list_products():
             ORDER BY checked_at DESC
             LIMIT 1
         )
+        {visible_filter()}
         ORDER BY p.pinned DESC, p.position, p.added_at DESC
     """).fetchall()
     return jsonify([dict(row) for row in rows])
@@ -122,13 +133,30 @@ def pin_product(product_id):
     return jsonify({"id": product_id, "pinned": pinned})
 
 
-@app.route("/api/stores", methods=["GET"])
+@app.route("/api/products/<int:product_id>/hidden", methods=["POST"])
 @login_required
+def hide_product(product_id):
+    data = request.get_json(silent=True) or {}
+    hidden = data.get("hidden")
+    if not isinstance(hidden, bool):
+        return jsonify({"error": "hidden must be true or false"}), 400
+
+    db = get_db()
+    cursor = db.execute("UPDATE products SET hidden = ? WHERE id = ?", (int(hidden), product_id))
+    if cursor.rowcount == 0:
+        return jsonify({"error": "Product not found"}), 404
+    db.commit()
+
+    return jsonify({"id": product_id, "hidden": hidden})
+
+
+@app.route("/api/stores", methods=["GET"])
 def list_stores():
     # Count by URL domain rather than the stored store name, since that name
     # comes from each site's own markup and isn't guaranteed to match.
     db = get_db()
-    counts = Counter(store_domain(row["url"]) for row in db.execute("SELECT url FROM products"))
+    rows = db.execute(f"SELECT p.url FROM products p {visible_filter()}")
+    counts = Counter(store_domain(row["url"]) for row in rows)
     return jsonify([
         {
             "name": store["name"],
@@ -365,11 +393,11 @@ def delete_product(product_id):
 
 
 @app.route("/api/products/<int:product_id>/history", methods=["GET"])
-@login_required
 def product_history(product_id):
     db = get_db()
     product = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
-    if product is None:
+    # A hidden product looks the same as a missing one to logged-out visitors.
+    if product is None or (product["hidden"] and not current_user.is_authenticated):
         return jsonify({"error": "Product not found"}), 404
 
     rows = db.execute(
