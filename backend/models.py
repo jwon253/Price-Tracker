@@ -36,6 +36,11 @@ def init_db():
         conn.execute("ALTER TABLE products ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
         ids = [row[0] for row in conn.execute("SELECT id FROM products ORDER BY added_at DESC")]
         conn.executemany("UPDATE products SET position = ? WHERE id = ?", list(enumerate(ids)))
+
+    history_columns = {row[1] for row in conn.execute("PRAGMA table_info(price_history)")}
+    if "regular_price" not in history_columns:
+        # NULL means the store didn't say what its regular price was.
+        conn.execute("ALTER TABLE price_history ADD COLUMN regular_price REAL")
     conn.commit()
     conn.close()
 
@@ -54,8 +59,8 @@ def update_product_image(conn, product_id, image_url):
 
 def insert_price_check(conn, product_id, scraped, checked_at):
     conn.execute(
-        "INSERT INTO price_history (product_id, price, stock_status, checked_at) VALUES (?, ?, ?, ?)",
-        (product_id, scraped["price"], scraped["stock_status"], checked_at),
+        "INSERT INTO price_history (product_id, price, regular_price, stock_status, checked_at) VALUES (?, ?, ?, ?, ?)",
+        (product_id, scraped["price"], scraped.get("regular_price"), scraped["stock_status"], checked_at),
     )
     conn.commit()
 

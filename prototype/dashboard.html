@@ -408,6 +408,10 @@
     color: var(--ink-soft);
   }
 
+  a.store-link[href] { cursor: pointer; align-self: flex-start; }
+  a.store-link[href]:hover,
+  a.store-link[href]:focus-visible { color: var(--accent); text-decoration: underline; }
+
   .price {
     font-size: 17px;
     font-weight: 700;
@@ -436,6 +440,24 @@
   .stock-pill.low { color: var(--warn); background: var(--warn-soft); }
   .stock-pill.out { color: var(--danger); background: var(--danger-soft); }
   .stock-pill.unknown { color: var(--ink-soft); background: var(--surface-2); }
+
+  .price.on-sale, .detail-price.on-sale { color: var(--danger); }
+
+  /* One fixed-height line under the price on every card (sale, regular or
+     unknown), so all cards are the same height. */
+  .price-note {
+    display: block;
+    min-height: 16px;
+    font-size: 11.5px;
+    line-height: 16px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .price-note .was-price { text-decoration: line-through; }
+  .price-note .deal-pct { color: var(--danger); font-weight: 700; margin-left: 4px; }
 
   .checked {
     color: var(--ink-faint);
@@ -822,9 +844,11 @@
         <div class="detail-meta">
           <span class="store-chip" id="detail-store"></span>
           <span class="stock-pill" id="detail-stock"></span>
+          <a class="btn-secondary btn-small" id="detail-link" target="_blank" rel="noopener noreferrer" hidden></a>
         </div>
         <div class="detail-price-row">
           <span class="detail-price num" id="detail-price"></span>
+          <span class="price-note" id="detail-price-note"></span>
           <span class="detail-checked" id="detail-checked"></span>
         </div>
       </div>
@@ -871,7 +895,9 @@
   const detailName = document.getElementById("detail-name");
   const detailStore = document.getElementById("detail-store");
   const detailStock = document.getElementById("detail-stock");
+  const detailLink = document.getElementById("detail-link");
   const detailPrice = document.getElementById("detail-price");
+  const detailPriceNote = document.getElementById("detail-price-note");
   const detailChecked = document.getElementById("detail-checked");
   const chartContainer = document.getElementById("chart-container");
 
@@ -895,6 +921,65 @@
   }
 
   const THUMB_PLACEHOLDER = `<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="2"/><line x1="4" y1="10" x2="20" y2="10"/></svg>`;
+
+  // Returns null when the store didn't report a regular price, so no badge
+  // is shown rather than guessing.
+  function dealInfo(price, regularPrice) {
+    if (price == null || regularPrice == null) return null;
+    const now = Number(price);
+    const regular = Number(regularPrice);
+    if (regular > now + 0.005) {
+      return { sale: true, was: regular, pct: Math.round((1 - now / regular) * 100) };
+    }
+    return { sale: false };
+  }
+
+  // Fills the single line under a price: "$269.00 −34%" on sale, "Regular
+  // price" otherwise, or left empty (but still taking its line) if unknown.
+  function renderPriceNote(note, priceEl, price, regularPrice) {
+    note.textContent = "";
+    note.removeAttribute("title");
+    priceEl.classList.remove("on-sale");
+
+    const deal = dealInfo(price, regularPrice);
+    if (!deal) return;
+    if (!deal.sale) {
+      note.textContent = "Regular price";
+      return;
+    }
+
+    priceEl.classList.add("on-sale");
+    const was = document.createElement("span");
+    was.className = "was-price num";
+    was.textContent = `$${deal.was.toFixed(2)}`;
+    const pct = document.createElement("span");
+    pct.className = "deal-pct";
+    pct.textContent = deal.pct >= 1 ? `−${deal.pct}%` : "Sale";
+    note.append(was, pct);
+    note.title = `On sale — regular price $${deal.was.toFixed(2)}`;
+  }
+
+  // Only http(s) links are made clickable, so an imported "javascript:" URL
+  // can't run code when clicked.
+  function isWebUrl(url) {
+    try {
+      const { protocol } = new URL(url);
+      return protocol === "https:" || protocol === "http:";
+    } catch {
+      return false;
+    }
+  }
+
+  function setStoreLink(link, storeName, url) {
+    link.textContent = storeName;
+    if (isWebUrl(url)) {
+      link.href = url;
+      link.title = `Open this product on ${storeName}`;
+      link.append(" ↗");
+    } else {
+      link.removeAttribute("href");
+    }
+  }
 
   function truncateWords(text, maxWords) {
     const words = text.trim().split(/\s+/);
@@ -941,8 +1026,9 @@
         <div class="thumb">${THUMB_PLACEHOLDER}</div>
         <div class="card-info">
           <button type="button" class="name" data-id="${product.id}"></button>
-          <span class="store-chip"></span>
+          <a class="store-chip store-link" target="_blank" rel="noopener noreferrer" draggable="false"></a>
           <span class="price num"></span>
+          <span class="price-note"></span>
         </div>
         <div class="status">
           <span class="stock-pill ${stock.cls}">${stock.text}</span>
@@ -974,9 +1060,10 @@
         thumb.innerHTML = "";
         thumb.appendChild(img);
       }
-      card.querySelector(".store-chip").textContent = product.store || "Unknown store";
+      setStoreLink(card.querySelector(".store-link"), product.store || "Unknown store", product.url);
       card.querySelector(".price").textContent =
         product.price != null ? `$${Number(product.price).toFixed(2)}` : "—";
+      renderPriceNote(card.querySelector(".price-note"), card.querySelector(".price"), product.price, product.regular_price);
       card.querySelector(".checked").textContent = product.checked_at
         ? `checked ${new Date(product.checked_at).toLocaleDateString()}`
         : "not yet checked";
@@ -989,6 +1076,7 @@
     detailStore.textContent = "";
     detailStock.textContent = "";
     detailStock.className = "stock-pill";
+    detailLink.hidden = true;
     detailPrice.textContent = "";
     detailChecked.textContent = "";
     chartContainer.innerHTML = "";
@@ -1006,9 +1094,15 @@
 
     detailName.textContent = fullName;
     detailStore.textContent = product.store || "Unknown store";
+    if (isWebUrl(product.url)) {
+      detailLink.href = product.url;
+      detailLink.textContent = `View on ${product.store || "store"} ↗`;
+      detailLink.hidden = false;
+    }
     detailStock.textContent = stock.text;
     detailStock.className = `stock-pill ${stock.cls}`;
     detailPrice.textContent = latest ? `$${Number(latest.price).toFixed(2)}` : "—";
+    renderPriceNote(detailPriceNote, detailPrice, latest && latest.price, latest && latest.regular_price);
     detailChecked.textContent = latest
       ? `checked ${new Date(latest.checked_at).toLocaleDateString()}`
       : "not yet checked";

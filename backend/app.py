@@ -5,6 +5,7 @@ import sqlite3
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from flask import Flask, Response, g, jsonify, request, send_file
@@ -72,7 +73,8 @@ def logout():
 def list_products():
     db = get_db()
     rows = db.execute("""
-        SELECT p.id, p.name, p.url, p.store, p.image_url, p.pinned, ph.price, ph.stock_status, ph.checked_at
+        SELECT p.id, p.name, p.url, p.store, p.image_url, p.pinned,
+               ph.price, ph.regular_price, ph.stock_status, ph.checked_at
         FROM products p
         LEFT JOIN price_history ph ON ph.id = (
             SELECT id FROM price_history
@@ -151,7 +153,7 @@ def csv_safe(value):
 def export_csv():
     db = get_db()
     rows = db.execute("""
-        SELECT p.id, p.name, p.store, p.url, ph.checked_at, ph.price, ph.stock_status
+        SELECT p.id, p.name, p.store, p.url, ph.checked_at, ph.price, ph.stock_status, ph.regular_price
         FROM price_history ph
         JOIN products p ON p.id = ph.product_id
         ORDER BY p.id, ph.checked_at
@@ -159,7 +161,7 @@ def export_csv():
 
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(["product_id", "name", "store", "url", "checked_at", "price", "stock_status"])
+    writer.writerow(["product_id", "name", "store", "url", "checked_at", "price", "stock_status", "regular_price"])
     for row in rows:
         writer.writerow([csv_safe(value) for value in row])
 
@@ -200,6 +202,10 @@ def parse_import_rows(text):
         if not url or not name or not store:
             errors.append(f"Line {line}: name, store and url are required")
             continue
+        parsed_url = urlparse(url)
+        if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
+            errors.append(f"Line {line}: url must start with http:// or https://")
+            continue
 
         try:
             price = float(row["price"])
@@ -222,9 +228,21 @@ def parse_import_rows(text):
         if stock_status not in STOCK_STATUSES:
             stock_status = "unknown"
 
+        # Optional column: files exported before it existed don't have it.
+        raw_regular = (row.get("regular_price") or "").strip()
+        regular_price = None
+        if raw_regular:
+            try:
+                regular_price = float(raw_regular)
+                if regular_price < 0:
+                    raise ValueError
+            except ValueError:
+                errors.append(f"Line {line}: invalid regular_price '{raw_regular}'")
+                continue
+
         records.append({
-            "url": url, "name": name, "store": store,
-            "checked_at": checked_at, "price": price, "stock_status": stock_status,
+            "url": url, "name": name, "store": store, "checked_at": checked_at,
+            "price": price, "regular_price": regular_price, "stock_status": stock_status,
         })
 
     return records, errors
@@ -282,8 +300,8 @@ def import_csv():
             continue
 
         db.execute(
-            "INSERT INTO price_history (product_id, price, stock_status, checked_at) VALUES (?, ?, ?, ?)",
-            (product_id, record["price"], record["stock_status"], record["checked_at"]),
+            "INSERT INTO price_history (product_id, price, regular_price, stock_status, checked_at) VALUES (?, ?, ?, ?, ?)",
+            (product_id, record["price"], record["regular_price"], record["stock_status"], record["checked_at"]),
         )
         existing_checks.add((product_id, record["checked_at"]))
         rows_added += 1
@@ -355,7 +373,7 @@ def product_history(product_id):
         return jsonify({"error": "Product not found"}), 404
 
     rows = db.execute(
-        "SELECT price, stock_status, checked_at FROM price_history WHERE product_id = ? ORDER BY checked_at",
+        "SELECT price, regular_price, stock_status, checked_at FROM price_history WHERE product_id = ? ORDER BY checked_at",
         (product_id,),
     ).fetchall()
 

@@ -1,4 +1,5 @@
 import json
+import re
 from urllib.parse import urlparse
 
 import requests
@@ -26,6 +27,14 @@ def scrape_product(url):
 
 def store_domain(url):
     return urlparse(url).netloc.lower().removeprefix("www.")
+
+
+def parse_price(value):
+    """Prices arrive as strings or numbers depending on the store."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def extract_image_url(image):
@@ -97,6 +106,9 @@ def scrape_pbtech(url):
         "name": product.get("name"),
         "store": store,
         "price": price,
+        # The JSON-LD price is PB Tech's normal price; a promo-code price
+        # (if any) is the discount.
+        "regular_price": parse_price(regular_price),
         "stock_status": stock_status,
         "image_url": extract_image_url(product.get("image")),
     }
@@ -154,6 +166,7 @@ query GetProduct($urlKey: String!) {
             price_range {
                 minimum_price {
                     final_price { value }
+                    regular_price { value }
                 }
             }
         }
@@ -188,17 +201,15 @@ def scrape_connor(url):
         raise ValueError(f"No product found for {url}")
 
     product = items[0]
-    price = (
-        product.get("price_range", {})
-        .get("minimum_price", {})
-        .get("final_price", {})
-        .get("value")
-    )
+    minimum_price = product.get("price_range", {}).get("minimum_price", {})
+    price = (minimum_price.get("final_price") or {}).get("value")
+    regular_price = (minimum_price.get("regular_price") or {}).get("value")
 
     return {
         "name": product.get("name"),
         "store": "Connor",
         "price": price,
+        "regular_price": parse_price(regular_price),
         "stock_status": CONNOR_STOCK_STATUS.get(product.get("stock_status"), "unknown"),
         "image_url": product.get("small_image", {}).get("url"),
     }
@@ -265,6 +276,7 @@ def scrape_footlocker(url):
         "name": name,
         "store": store,
         "price": offers.get("price") if offers else None,
+        "regular_price": None,  # not exposed in Foot Locker's JSON-LD
         "stock_status": stock_status,
         "image_url": extract_image_url(variant.get("image") or product_group.get("image")),
     }
@@ -320,6 +332,7 @@ def scrape_computerlounge(url):
         "name": product.get("name"),
         "store": store,
         "price": offers.get("price") if offers else None,
+        "regular_price": None,  # Shopify's JSON-LD has no compare-at price
         "stock_status": stock_status,
         "image_url": extract_image_url(product.get("image")),
     }
@@ -373,10 +386,21 @@ def scrape_briscoes(url):
     availability = offers.get("availability") if offers else None
     stock_status = SCHEMA_AVAILABILITY_TO_STOCK_STATUS.get(availability, "unknown")
 
+    price = offers.get("price") if offers else None
+    # On sale, the pre-sale price is given as a ListPrice; when there's no
+    # ListPrice the selling price is the regular price.
+    list_price = None
+    specs = offers.get("priceSpecification") if offers else None
+    for spec in specs if isinstance(specs, list) else [specs]:
+        if isinstance(spec, dict) and str(spec.get("priceType", "")).endswith("ListPrice"):
+            list_price = parse_price(spec.get("price"))
+            break
+
     return {
         "name": product.get("name"),
         "store": store or "Briscoes",
-        "price": offers.get("price") if offers else None,
+        "price": price,
+        "regular_price": list_price if list_price is not None else parse_price(price),
         "stock_status": stock_status,
         "image_url": extract_image_url(product.get("image")),
     }
@@ -413,11 +437,18 @@ def scrape_extremepc(url):
         offers = offers[0] if offers else None
 
     availability = offers.get("availability") if offers else None
+    price = offers.get("price") if offers else None
+
+    # The JSON-LD has only the selling price. BigCommerce's page data (one
+    # object for the main product) also carries the pre-sale price.
+    match = re.search(r'"non_sale_price_with_tax"\s*:\s*\{[^}]*"value"\s*:\s*([\d.]+)', response.text)
+    regular_price = parse_price(match.group(1)) if match else parse_price(price)
 
     return {
         "name": product.get("name"),
         "store": "ExtremePC",
-        "price": offers.get("price") if offers else None,
+        "price": price,
+        "regular_price": regular_price,
         "stock_status": SCHEMA_AVAILABILITY_TO_STOCK_STATUS.get(availability, "unknown"),
         "image_url": extract_image_url(product.get("image")),
     }
