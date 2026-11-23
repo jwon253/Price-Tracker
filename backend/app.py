@@ -3,7 +3,7 @@ import io
 import os
 import sqlite3
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -169,6 +169,41 @@ def move_product_to_past(product_id):
     db.commit()
 
     return jsonify({"id": product_id, "past": past})
+
+
+@app.route("/api/products/<int:product_id>/purchase", methods=["PUT"])
+@login_required
+def set_purchase(product_id):
+    """Record when a product was bought. {"date": null} clears it."""
+    data = request.get_json(silent=True) or {}
+    raw_date = data.get("date")
+    raw_price = data.get("price")
+
+    purchased_at = purchase_price = None
+    if raw_date is not None:
+        try:
+            purchased_at = date.fromisoformat(raw_date).isoformat()
+        except (TypeError, ValueError):
+            return jsonify({"error": "date must be YYYY-MM-DD"}), 400
+        # A day of slack, since "today" depends on your time zone.
+        if purchased_at > (date.today() + timedelta(days=1)).isoformat():
+            return jsonify({"error": "The purchase date can't be in the future"}), 400
+
+        if raw_price is not None:
+            if isinstance(raw_price, bool) or not isinstance(raw_price, (int, float)) or raw_price < 0:
+                return jsonify({"error": "price must be a positive number"}), 400
+            purchase_price = round(float(raw_price), 2)
+
+    db = get_db()
+    cursor = db.execute(
+        "UPDATE products SET purchased_at = ?, purchase_price = ? WHERE id = ?",
+        (purchased_at, purchase_price, product_id),
+    )
+    if cursor.rowcount == 0:
+        return jsonify({"error": "Product not found"}), 404
+    db.commit()
+
+    return jsonify({"id": product_id, "purchased_at": purchased_at, "purchase_price": purchase_price})
 
 
 @app.route("/api/stores", methods=["GET"])
@@ -427,8 +462,13 @@ def product_history(product_id):
         (product_id,),
     ).fetchall()
 
+    product = dict(product)
+    if not current_user.is_authenticated:
+        # What you bought and paid stays private.
+        product["purchased_at"] = product["purchase_price"] = None
+
     return jsonify({
-        "product": dict(product),
+        "product": product,
         "history": [dict(row) for row in rows],
     })
 

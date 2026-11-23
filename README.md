@@ -85,6 +85,7 @@ Reading endpoints (`/api/session`, `GET /api/products`, `GET /api/products/<id>/
 | `GET` | `/api/session` | `{"logged_in": true/false}` |
 | `POST` | `/api/products/<id>/hidden` | `{"hidden": true}` or `false`: hide a product from logged-out visitors |
 | `POST` | `/api/products/<id>/past` | `{"past": true}` or `false`: move a product to or from Past Products, which are checked weekly instead of daily |
+| `PUT` | `/api/products/<id>/purchase` | `{"date": "2026-03-14", "price": 199.0}`: mark when you bought it (price optional, `{"date": null}` clears it). Shown as a line on the price chart |
 | `POST` | `/api/products/<id>/pin` | `{"pinned": true}` or `false`: pinned products are listed first |
 | `DELETE` | `/api/products/<id>` | Stop tracking a product and delete its history |
 | `GET` | `/api/products/<id>/history` | The product plus every recorded price check |

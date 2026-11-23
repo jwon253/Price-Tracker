@@ -77,7 +77,7 @@
 
   [hidden] { display: none !important; }
 
-  input[type="text"], input[type="password"], input[type="url"] {
+  input[type="text"], input[type="password"], input[type="url"], input[type="date"], input[type="number"] {
     font: inherit;
     color: var(--ink);
     background: var(--surface);
@@ -530,6 +530,8 @@
   body.public .card-actions,
   body.public #import-status,
   body.public #logout-btn,
+  body.public #purchase-edit,
+  body.public #purchase-form,
   body:not(.public) #login-btn { display: none !important; }
 
   body:not(.public) #product-list .card { cursor: grab; }
@@ -644,8 +646,63 @@
   }
 
   .chart-card h2 {
-    margin: 0 0 14px;
+    margin: 0;
     font-size: 15px;
+  }
+
+  .chart-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .purchase-summary {
+    margin: -6px 0 14px;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+
+  .purchase-change { margin-left: 4px; font-weight: 600; }
+  .purchase-change.down { color: var(--danger); }
+  .purchase-change.up { color: var(--ink); }
+
+  .purchase-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 10px;
+    margin: -4px 0 16px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--paper);
+  }
+
+  .purchase-form label { display: flex; flex-direction: column; gap: 4px; }
+  .purchase-form input { width: 160px; padding: 6px 8px; }
+  .purchase-form .hint { flex-basis: 100%; margin: 0; font-size: 11.5px; color: var(--ink-faint); }
+  .purchase-form .form-error { flex-basis: 100%; }
+  .purchase-form .form-error:empty { display: none; }
+
+  .chart-purchase-line {
+    stroke: var(--ink-soft);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 4;
+  }
+
+  .chart-purchase-label {
+    font-size: 11px;
+    font-weight: 600;
+    fill: var(--ink-soft);
+    font-family: inherit;
+  }
+
+  .chart-purchase-dot {
+    fill: var(--surface);
+    stroke: var(--ink-soft);
+    stroke-width: 2;
   }
 
   .chart-container {
@@ -879,7 +936,24 @@
       </div>
 
       <div class="chart-card">
-        <h2>Price history</h2>
+        <div class="chart-head">
+          <h2>Price history</h2>
+          <button type="button" class="btn-secondary btn-small" id="purchase-edit" hidden>Add purchase date</button>
+        </div>
+        <p class="purchase-summary" id="purchase-summary" hidden></p>
+        <form class="purchase-form" id="purchase-form" hidden>
+          <label>Purchased on
+            <input type="date" id="purchase-date" required>
+          </label>
+          <label>Price paid
+            <input type="number" id="purchase-price" min="0" step="0.01" placeholder="Optional">
+          </label>
+          <button type="submit" class="btn-primary btn-small">Save</button>
+          <button type="button" class="btn-secondary btn-small" id="purchase-cancel">Cancel</button>
+          <button type="button" class="btn-secondary btn-small" id="purchase-remove">Remove</button>
+          <p class="hint">Leave the price blank to use the price scraped on that day.</p>
+          <p class="form-error" id="purchase-error"></p>
+        </form>
         <div class="chart-container" id="chart-container"></div>
       </div>
     </section>
@@ -941,6 +1015,14 @@
   const detailPriceNote = document.getElementById("detail-price-note");
   const detailChecked = document.getElementById("detail-checked");
   const chartContainer = document.getElementById("chart-container");
+  const purchaseEdit = document.getElementById("purchase-edit");
+  const purchaseSummary = document.getElementById("purchase-summary");
+  const purchaseForm = document.getElementById("purchase-form");
+  const purchaseDate = document.getElementById("purchase-date");
+  const purchasePriceInput = document.getElementById("purchase-price");
+  const purchaseCancel = document.getElementById("purchase-cancel");
+  const purchaseRemove = document.getElementById("purchase-remove");
+  const purchaseError = document.getElementById("purchase-error");
 
   const storesView = document.getElementById("stores-view");
   const storesSub = document.getElementById("stores-sub");
@@ -1153,6 +1235,10 @@
     detailPrice.textContent = "";
     detailChecked.textContent = "";
     chartContainer.innerHTML = "";
+    purchaseEdit.hidden = true;
+    purchaseSummary.hidden = true;
+    purchaseForm.hidden = true;
+    detailProduct = null;
 
     const res = await fetch(`/api/products/${id}/history`);
     if (!res.ok) {
@@ -1183,8 +1269,126 @@
       ? `checked ${new Date(latest.checked_at).toLocaleDateString()}`
       : "not yet checked";
 
-    drawPriceChart(chartContainer, history);
+    detailProduct = product;
+    detailHistory = history;
+    purchaseEdit.hidden = false;
+    renderPurchase();
   }
+
+  // ---------- Purchase date ----------
+  let detailProduct = null;
+  let detailHistory = [];
+
+  const money = (n) => `$${Number(n).toFixed(2)}`;
+
+  function localDateKey(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  // Midday, so the line sits in the middle of the purchase day.
+  function dateFromKey(key) {
+    const [y, m, d] = key.split("-").map(Number);
+    return new Date(y, m - 1, d, 12);
+  }
+
+  // The price paid is the one you entered, otherwise the price scraped that
+  // day, otherwise unknown (the line is still drawn).
+  function purchaseInfo(product, history) {
+    if (!product.purchased_at) return null;
+    const time = dateFromKey(product.purchased_at);
+    if (product.purchase_price != null) {
+      return { time, price: Number(product.purchase_price), scraped: false };
+    }
+    const sameDay = history.filter((h) => localDateKey(new Date(h.checked_at)) === product.purchased_at);
+    if (sameDay.length) {
+      return { time, price: Number(sameDay[sameDay.length - 1].price), scraped: true };
+    }
+    return { time, price: null, scraped: false };
+  }
+
+  function renderPurchase() {
+    const info = purchaseInfo(detailProduct, detailHistory);
+    purchaseEdit.textContent = info ? "Edit purchase" : "Add purchase date";
+    purchaseForm.hidden = true;
+    purchaseSummary.textContent = "";
+    purchaseSummary.hidden = !info;
+
+    if (info) {
+      const dateText = info.time.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+      if (info.price == null) {
+        purchaseSummary.textContent = `Bought ${dateText}. No price was recorded that day — edit the purchase to add what you paid.`;
+      } else {
+        purchaseSummary.textContent = `Bought ${dateText} for ${money(info.price)}${info.scraped ? " (scraped that day)" : ""}.`;
+        const latest = detailHistory[detailHistory.length - 1];
+        if (latest) {
+          const diff = Number(latest.price) - info.price;
+          const change = document.createElement("span");
+          change.className = "purchase-change";
+          if (Math.abs(diff) < 0.005) {
+            change.textContent = "Same price now.";
+          } else {
+            const pct = info.price > 0 ? ` (${diff < 0 ? "−" : "+"}${Math.round((Math.abs(diff) / info.price) * 1000) / 10}%)` : "";
+            change.textContent = `Now ${money(latest.price)}: ${diff < 0 ? "▼" : "▲"} ${money(Math.abs(diff))}${pct} ${diff < 0 ? "lower" : "higher"}.`;
+            change.classList.add(diff < 0 ? "down" : "up");
+          }
+          purchaseSummary.append(" ", change);
+        }
+      }
+    }
+
+    drawPriceChart(chartContainer, detailHistory, info);
+  }
+
+  purchaseEdit.addEventListener("click", () => {
+    if (!detailProduct) return;
+    const today = localDateKey(new Date());
+    purchaseDate.max = today;
+    purchaseDate.value = detailProduct.purchased_at || today;
+    purchasePriceInput.value = detailProduct.purchase_price != null ? Number(detailProduct.purchase_price).toFixed(2) : "";
+    purchaseRemove.hidden = !detailProduct.purchased_at;
+    purchaseError.textContent = "";
+    purchaseForm.hidden = false;
+    purchaseDate.focus();
+  });
+
+  purchaseCancel.addEventListener("click", () => {
+    purchaseForm.hidden = true;
+  });
+
+  async function savePurchase(body) {
+    purchaseError.textContent = "";
+    const buttons = purchaseForm.querySelectorAll("button");
+    buttons.forEach((b) => { b.disabled = true; });
+    try {
+      const res = await fetch(`/api/products/${detailProduct.id}/purchase`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        purchaseError.textContent = data.error || "Could not save the purchase.";
+        return;
+      }
+      detailProduct.purchased_at = data.purchased_at;
+      detailProduct.purchase_price = data.purchase_price;
+      renderPurchase();
+    } catch {
+      purchaseError.textContent = "Could not save. Check your connection and try again.";
+    } finally {
+      buttons.forEach((b) => { b.disabled = false; });
+    }
+  }
+
+  purchaseForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const raw = purchasePriceInput.value.trim();
+    savePurchase({ date: purchaseDate.value, price: raw === "" ? null : Number(raw) });
+  });
+
+  purchaseRemove.addEventListener("click", () => {
+    savePurchase({ date: null });
+  });
 
   function niceScale(min, max) {
     if (min === max) {
@@ -1205,17 +1409,7 @@
     return { min: niceMin, max: niceMax, ticks };
   }
 
-  function pickXTicks(n) {
-    if (n <= 1) return [0];
-    const maxTicks = Math.min(5, n);
-    const idxs = new Set();
-    for (let i = 0; i < maxTicks; i++) {
-      idxs.add(Math.round((i / (maxTicks - 1)) * (n - 1)));
-    }
-    return Array.from(idxs).sort((a, b) => a - b);
-  }
-
-  function drawPriceChart(container, history) {
+  function drawPriceChart(container, history, purchase) {
     container.innerHTML = "";
 
     if (history.length === 0) {
@@ -1224,17 +1418,33 @@
     }
 
     const points = history.map((h) => ({ date: new Date(h.checked_at), price: Number(h.price) }));
+    const purchaseTime = purchase ? purchase.time.getTime() : null;
+    const purchasePrice = purchase && purchase.price != null ? purchase.price : null;
 
     const width = 720;
     const height = 280;
-    const margin = { top: 16, right: 16, bottom: 30, left: 60 };
+    const margin = { top: purchase ? 28 : 16, right: 16, bottom: 30, left: 60 };
     const innerW = width - margin.left - margin.right;
     const innerH = height - margin.top - margin.bottom;
 
     const prices = points.map((p) => p.price);
+    if (purchasePrice != null) prices.push(purchasePrice);
     const { min: yMin, max: yMax, ticks } = niceScale(Math.min(...prices), Math.max(...prices));
 
-    const xFor = (i) => (points.length === 1 ? margin.left + innerW / 2 : margin.left + (i / (points.length - 1)) * innerW);
+    // The x axis is real time, so gaps between checks (e.g. weekly past
+    // products) and a purchase date before tracking began are spaced correctly.
+    const DAY = 24 * 60 * 60 * 1000;
+    const times = points.map((p) => p.date.getTime());
+    if (purchaseTime != null) times.push(purchaseTime);
+    let tMin = Math.min(...times);
+    let tMax = Math.max(...times);
+    if (tMax - tMin < DAY) {
+      const mid = (tMin + tMax) / 2;
+      tMin = mid - DAY;
+      tMax = mid + DAY;
+    }
+    const xTime = (t) => margin.left + ((t - tMin) / (tMax - tMin)) * innerW;
+    const xFor = (i) => xTime(points[i].date.getTime());
     const yFor = (price) => margin.top + innerH - ((price - yMin) / (yMax - yMin || 1)) * innerH;
 
     const svgNS = "http://www.w3.org/2000/svg";
@@ -1262,12 +1472,19 @@
       svg.appendChild(label);
     }
 
-    for (const i of pickXTicks(points.length)) {
+    // Up to five evenly spaced dates, skipping repeats on short ranges.
+    const tickCount = Math.min(5, Math.max(2, Math.round((tMax - tMin) / DAY) + 1));
+    let lastLabel = "";
+    for (let k = 0; k < tickCount; k++) {
+      const t = tMin + (k / (tickCount - 1)) * (tMax - tMin);
+      const text = new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+      if (text === lastLabel) continue;
+      lastLabel = text;
       const label = document.createElementNS(svgNS, "text");
-      label.setAttribute("x", xFor(i));
+      label.setAttribute("x", xTime(t));
       label.setAttribute("y", height - margin.bottom + 18);
       label.setAttribute("class", "chart-axis-label chart-axis-x");
-      label.textContent = points[i].date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+      label.textContent = text;
       svg.appendChild(label);
     }
 
@@ -1285,6 +1502,34 @@
       line.setAttribute("d", lineD);
       line.setAttribute("class", "chart-line");
       svg.appendChild(line);
+    }
+
+    if (purchase) {
+      const px = xTime(purchaseTime);
+      const mark = document.createElementNS(svgNS, "line");
+      mark.setAttribute("x1", px);
+      mark.setAttribute("x2", px);
+      mark.setAttribute("y1", margin.top);
+      mark.setAttribute("y2", margin.top + innerH);
+      mark.setAttribute("class", "chart-purchase-line");
+      svg.appendChild(mark);
+
+      const label = document.createElementNS(svgNS, "text");
+      label.setAttribute("x", px);
+      label.setAttribute("y", margin.top - 10);
+      label.setAttribute("class", "chart-purchase-label");
+      label.setAttribute("text-anchor", px < margin.left + 50 ? "start" : px > width - margin.right - 50 ? "end" : "middle");
+      label.textContent = purchasePrice != null ? `Bought ${money(purchasePrice)}` : "Bought";
+      svg.appendChild(label);
+
+      if (purchasePrice != null) {
+        const dot = document.createElementNS(svgNS, "circle");
+        dot.setAttribute("cx", px);
+        dot.setAttribute("cy", yFor(purchasePrice));
+        dot.setAttribute("r", 4.5);
+        dot.setAttribute("class", "chart-purchase-dot");
+        svg.appendChild(dot);
+      }
     }
 
     const lastI = points.length - 1;

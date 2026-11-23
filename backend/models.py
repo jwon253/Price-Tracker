@@ -37,6 +37,12 @@ def init_db():
         # Past products (e.g. already bought) are kept off the dashboard and
         # only re-checked weekly by daily_scrape.py.
         conn.execute("ALTER TABLE products ADD COLUMN past INTEGER NOT NULL DEFAULT 0")
+    if "purchased_at" not in columns:
+        # When you bought it (YYYY-MM-DD) and, optionally, what you paid.
+        # Without a price, the scraped price from that day is used instead.
+        conn.execute("ALTER TABLE products ADD COLUMN purchased_at TEXT")
+    if "purchase_price" not in columns:
+        conn.execute("ALTER TABLE products ADD COLUMN purchase_price REAL")
     if "position" not in columns:
         # Seed the manual order from the previous newest-first order so the
         # dashboard looks the same until something is dragged.
