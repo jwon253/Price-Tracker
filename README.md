@@ -1,6 +1,6 @@
 # Price-Tracker
 
-A self-hosted price tracker for one user. Add a product URL and it records the price and stock status. A daily job re-checks every product, and the dashboard charts each product's price history.
+A self-hosted price tracker for one user. Add a product URL and it records the price and stock status. A daily job re-checks every product, and the dashboard charts each product's price history. Products you've already bought can be moved to Past Products, where they're checked weekly instead.
 
 **Supported stores:** PB Tech, Computer Lounge, Foot Locker (NZ), Connor (NZ), Briscoes, ExtremePC
 
@@ -84,6 +84,7 @@ Reading endpoints (`/api/session`, `GET /api/products`, `GET /api/products/<id>/
 | `PUT` | `/api/products/order` | `{"ids": [3, 1, 2]}`: save the dashboard order (pinned products still come first) |
 | `GET` | `/api/session` | `{"logged_in": true/false}` |
 | `POST` | `/api/products/<id>/hidden` | `{"hidden": true}` or `false`: hide a product from logged-out visitors |
+| `POST` | `/api/products/<id>/past` | `{"past": true}` or `false`: move a product to or from Past Products, which are checked weekly instead of daily |
 | `POST` | `/api/products/<id>/pin` | `{"pinned": true}` or `false`: pinned products are listed first |
 | `DELETE` | `/api/products/<id>` | Stop tracking a product and delete its history |
 | `GET` | `/api/products/<id>/history` | The product plus every recorded price check |

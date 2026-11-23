@@ -83,7 +83,7 @@ def visible_filter(alias="p"):
 def list_products():
     db = get_db()
     rows = db.execute(f"""
-        SELECT p.id, p.name, p.url, p.store, p.image_url, p.pinned, p.hidden,
+        SELECT p.id, p.name, p.url, p.store, p.image_url, p.pinned, p.hidden, p.past,
                ph.price, ph.regular_price, ph.stock_status, ph.checked_at
         FROM products p
         LEFT JOIN price_history ph ON ph.id = (
@@ -148,6 +148,27 @@ def hide_product(product_id):
     db.commit()
 
     return jsonify({"id": product_id, "hidden": hidden})
+
+
+@app.route("/api/products/<int:product_id>/past", methods=["POST"])
+@login_required
+def move_product_to_past(product_id):
+    data = request.get_json(silent=True) or {}
+    past = data.get("past")
+    if not isinstance(past, bool):
+        return jsonify({"error": "past must be true or false"}), 400
+
+    db = get_db()
+    # Moving either way unpins the product and puts it first in its new list.
+    cursor = db.execute(
+        "UPDATE products SET past = ?, pinned = 0, position = ? WHERE id = ?",
+        (int(past), top_position(db), product_id),
+    )
+    if cursor.rowcount == 0:
+        return jsonify({"error": "Product not found"}), 404
+    db.commit()
+
+    return jsonify({"id": product_id, "past": past})
 
 
 @app.route("/api/stores", methods=["GET"])
@@ -352,10 +373,11 @@ def add_product():
 
     db = get_db()
     existing = db.execute(
-        "SELECT id FROM products WHERE rtrim(url, '/') = rtrim(?, '/')", (url,)
+        "SELECT id, past FROM products WHERE rtrim(url, '/') = rtrim(?, '/')", (url,)
     ).fetchone()
     if existing is not None:
-        return jsonify({"error": "This product is already being tracked"}), 409
+        where = "in Past products" if existing["past"] else "being tracked"
+        return jsonify({"error": f"This product is already {where}"}), 409
 
     try:
         scraped = scrape_product(url)

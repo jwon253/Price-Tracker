@@ -33,6 +33,10 @@ def init_db():
     if "hidden" not in columns:
         # Hidden products are left out of the public (logged-out) view.
         conn.execute("ALTER TABLE products ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
+    if "past" not in columns:
+        # Past products (e.g. already bought) are kept off the dashboard and
+        # only re-checked weekly by daily_scrape.py.
+        conn.execute("ALTER TABLE products ADD COLUMN past INTEGER NOT NULL DEFAULT 0")
     if "position" not in columns:
         # Seed the manual order from the previous newest-first order so the
         # dashboard looks the same until something is dragged.

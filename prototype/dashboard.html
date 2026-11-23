@@ -505,7 +505,7 @@
 
   .card.pinned { border-color: var(--accent); }
 
-  .hide-btn {
+  .hide-btn, .move-btn {
     background: none;
     border: none;
     color: var(--ink-faint);
@@ -517,9 +517,9 @@
     justify-content: center;
   }
 
-  .hide-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.6; }
-  .hide-btn:hover, .hide-btn.active { color: var(--accent); }
-  .hide-btn:disabled { opacity: 0.5; cursor: default; }
+  .hide-btn svg, .move-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+  .hide-btn:hover, .hide-btn.active, .move-btn:hover { color: var(--accent); }
+  .hide-btn:disabled, .move-btn:disabled { opacity: 0.5; cursor: default; }
 
   .card.is-hidden { border-style: dashed; }
   .card.is-hidden .thumb, .card.is-hidden .card-info { opacity: 0.55; }
@@ -794,9 +794,9 @@
       <svg viewBox="0 0 24 24"><path d="M3 9 L4 4 L20 4 L21 9"/><path d="M4 9 L20 9 L20 20 L4 20 Z"/><path d="M9 20 L9 14 L15 14 L15 20"/></svg>
       Stores
     </a>
-    <a class="nav-item" href="#">
+    <a class="nav-item" href="#/past" data-view="past">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7 L12 12 L16 14.5"/></svg>
-      Past Sales
+      Past Products
     </a>
 
     <div class="sidebar-footer">
@@ -894,6 +894,17 @@
 
       <div class="products" id="store-list"></div>
     </section>
+
+    <section id="past-view" hidden>
+      <div class="topbar">
+        <div>
+          <h1>Past Products</h1>
+          <div class="sub" id="past-sub"></div>
+        </div>
+      </div>
+
+      <div class="products" id="past-list"></div>
+    </section>
   </main>
 </div>
 
@@ -935,6 +946,10 @@
   const storesSub = document.getElementById("stores-sub");
   const storeList = document.getElementById("store-list");
   const navItems = document.querySelectorAll(".nav-item");
+
+  const pastView = document.getElementById("past-view");
+  const pastSub = document.getElementById("past-sub");
+  const pastList = document.getElementById("past-list");
 
   const importBtn = document.getElementById("import-btn");
   const importFile = document.getElementById("import-file");
@@ -1033,15 +1048,30 @@
     productCount.textContent = `${products.length} item${products.length === 1 ? "" : "s"}`;
     topbarSub.textContent = `${today} · ${products.length} product${products.length === 1 ? "" : "s"} tracked across ${storeCount} store${storeCount === 1 ? "" : "s"}`;
 
-    productList.innerHTML = "";
+    renderCards(productList, products, false, loggedIn
+      ? "No products tracked yet — add one to get started."
+      : "No products to show yet.");
+  }
+
+  function renderPastProducts(products) {
+    pastSub.textContent = `${products.length} product${products.length === 1 ? "" : "s"} · prices checked weekly`;
+    renderCards(pastList, products, true, loggedIn
+      ? "No past products yet. Use the box button on a dashboard product to move it here — it's then checked weekly instead of daily."
+      : "No past products to show.");
+  }
+
+  const MOVE_TO_PAST_ICON = `<svg viewBox="0 0 24 24"><path d="M3 4 L21 4 L21 8 L3 8 Z"/><path d="M5 8 L5 20 L19 20 L19 8"/><path d="M10 12 L14 12"/></svg>`;
+  const MOVE_BACK_ICON = `<svg viewBox="0 0 24 24"><path d="M12 19 L12 5"/><path d="M6 11 L12 5 L18 11"/></svg>`;
+
+  // Past products use the same cards, but can't be pinned or dragged.
+  function renderCards(list, products, past, emptyText) {
+    list.innerHTML = "";
 
     if (products.length === 0) {
       const empty = document.createElement("p");
       empty.className = "empty";
-      empty.textContent = loggedIn
-        ? "No products tracked yet — add one to get started."
-        : "No products to show yet.";
-      productList.appendChild(empty);
+      empty.textContent = emptyText;
+      list.appendChild(empty);
       return;
     }
 
@@ -1051,10 +1081,10 @@
       const pinned = Boolean(product.pinned);
       const hidden = Boolean(product.hidden);
       card.className = "card" + (pinned ? " pinned" : "") + (hidden ? " is-hidden" : "");
-      card.draggable = loggedIn;
+      card.draggable = loggedIn && !past;
       card.dataset.id = product.id;
       card.dataset.pinned = pinned ? "1" : "0";
-      if (loggedIn) card.title = "Drag to reorder";
+      if (card.draggable) card.title = "Drag to reorder";
       card.innerHTML = `
         <div class="thumb">${THUMB_PLACEHOLDER}</div>
         <div class="card-info">
@@ -1071,10 +1101,14 @@
                     title="${hidden ? "Hidden from logged-out visitors — click to show" : "Hide from logged-out visitors"}" aria-pressed="${hidden}">
               <svg viewBox="0 0 24 24"><path d="M2 12 C5 6.5 19 6.5 22 12 C19 17.5 5 17.5 2 12 Z"/><circle cx="12" cy="12" r="3"/>${hidden ? '<line x1="4" y1="4" x2="20" y2="20"/>' : ""}</svg>
             </button>
-            <button type="button" class="pin-btn${pinned ? " active" : ""}" data-id="${product.id}" data-pinned="${pinned ? 1 : 0}"
+            <button type="button" class="move-btn" data-id="${product.id}" data-past="${past ? 1 : 0}"
+                    title="${past ? "Move back to the dashboard (checked daily)" : "Move to Past products (checked weekly)"}">
+              ${past ? MOVE_BACK_ICON : MOVE_TO_PAST_ICON}
+            </button>
+            ${past ? "" : `<button type="button" class="pin-btn${pinned ? " active" : ""}" data-id="${product.id}" data-pinned="${pinned ? 1 : 0}"
                     title="${pinned ? "Unpin" : "Pin to top"}" aria-pressed="${pinned}">
               <svg viewBox="0 0 24 24"><path d="M9 3 L15 3 L14 9 L18 13 L6 13 L10 9 Z"/><line x1="12" y1="13" x2="12" y2="21"/></svg>
-            </button>
+            </button>`}
             <button type="button" class="delete-btn" data-id="${product.id}" title="Remove product">
               <svg viewBox="0 0 24 24"><path d="M4 7 L20 7"/><path d="M9 7 L9 4 L15 4 L15 7"/><path d="M6 7 L7 20 L17 20 L18 7"/></svg>
             </button>
@@ -1104,9 +1138,11 @@
       card.querySelector(".checked").textContent = product.checked_at
         ? `checked ${new Date(product.checked_at).toLocaleDateString()}`
         : "not yet checked";
-      productList.appendChild(card);
+      list.appendChild(card);
     }
   }
+
+  let detailFromPast = false;
 
   async function showProductDetail(id) {
     detailName.textContent = "Loading…";
@@ -1126,6 +1162,9 @@
 
     const { product, history } = await res.json();
     const fullName = product.name || "Untitled product";
+    detailFromPast = Boolean(product.past);
+    detailBack.textContent = detailFromPast ? "← Back to past products" : "← Back to dashboard";
+    navItems.forEach((item) => item.classList.toggle("active", item.dataset.view === (detailFromPast ? "past" : "dashboard")));
     const latest = history[history.length - 1];
     const stock = stockInfo(latest ? latest.stock_status : undefined);
 
@@ -1342,6 +1381,7 @@
     const productMatch = location.hash.match(/^#\/product\/(\d+)/);
     if (productMatch) return { view: "detail", id: Number(productMatch[1]) };
     if (location.hash === "#/stores") return { view: "stores" };
+    if (location.hash === "#/past") return { view: "past" };
     return { view: "dashboard" };
   }
 
@@ -1350,6 +1390,7 @@
     dashboardView.hidden = r.view !== "dashboard";
     productDetailView.hidden = r.view !== "detail";
     storesView.hidden = r.view !== "stores";
+    pastView.hidden = r.view !== "past";
 
     // The product detail page belongs under Dashboard in the sidebar.
     const activeNav = r.view === "detail" ? "dashboard" : r.view;
@@ -1357,7 +1398,8 @@
 
     if (r.view === "detail") showProductDetail(r.id);
     else if (r.view === "stores") showStores();
-    else renderProducts(products);
+    else if (r.view === "past") renderPastProducts(products.filter((p) => p.past));
+    else renderProducts(products.filter((p) => !p.past));
   }
 
   async function showStores() {
@@ -1404,10 +1446,10 @@
   });
 
   detailBack.addEventListener("click", () => {
-    location.hash = "";
+    location.hash = detailFromPast ? "#/past" : "";
   });
 
-  productList.addEventListener("click", async (event) => {
+  async function handleCardClick(event) {
     const nameBtn = event.target.closest(".name");
     if (nameBtn) {
       location.hash = `#/product/${nameBtn.dataset.id}`;
@@ -1430,6 +1472,26 @@
         }
       } catch {
         hideBtn.disabled = false;
+      }
+      return;
+    }
+
+    const moveBtn = event.target.closest(".move-btn");
+    if (moveBtn) {
+      moveBtn.disabled = true;
+      try {
+        const res = await fetch(`/api/products/${moveBtn.dataset.id}/past`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ past: moveBtn.dataset.past !== "1" }),
+        });
+        if (res.ok) {
+          loadProducts();
+        } else {
+          moveBtn.disabled = false;
+        }
+      } catch {
+        moveBtn.disabled = false;
       }
       return;
     }
@@ -1471,7 +1533,10 @@
     } catch {
       btn.disabled = false;
     }
-  });
+  }
+
+  productList.addEventListener("click", handleCardClick);
+  pastList.addEventListener("click", handleCardClick);
 
   // ---------- Drag to reorder ----------
   // Cards can only move within their own group (pinned or unpinned), since
