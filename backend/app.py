@@ -1,3 +1,5 @@
+import csv
+import io
 import os
 import sqlite3
 from collections import Counter
@@ -5,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, g, jsonify, request, send_file
+from flask import Flask, Response, g, jsonify, request, send_file
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_login import login_required, login_user, logout_user
@@ -20,6 +22,7 @@ FRONTEND_FILE = Path(__file__).parent.parent / "prototype" / "dashboard.html"
 
 app = Flask(__name__)
 app.secret_key = os.environ["SECRET_KEY"]
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # caps CSV import uploads
 
 login_manager.init_app(app)
 
@@ -98,6 +101,164 @@ def list_stores():
         }
         for store in STORES
     ])
+
+
+def csv_safe(value):
+    """Scraped text ends up in a spreadsheet, so stop a value that starts
+    with a formula character from being run as a formula when opened."""
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@"):
+        return "'" + value
+    return value
+
+
+@app.route("/api/export.csv", methods=["GET"])
+@login_required
+def export_csv():
+    db = get_db()
+    rows = db.execute("""
+        SELECT p.id, p.name, p.store, p.url, ph.checked_at, ph.price, ph.stock_status
+        FROM price_history ph
+        JOIN products p ON p.id = ph.product_id
+        ORDER BY p.id, ph.checked_at
+    """).fetchall()
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["product_id", "name", "store", "url", "checked_at", "price", "stock_status"])
+    for row in rows:
+        writer.writerow([csv_safe(value) for value in row])
+
+    filename = f"price-history-{datetime.now().date().isoformat()}.csv"
+    # The BOM makes Excel open the file as UTF-8, so names with special
+    # characters display correctly.
+    return Response(
+        "﻿" + buffer.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+IMPORT_COLUMNS = ("name", "store", "url", "checked_at", "price", "stock_status")
+STOCK_STATUSES = {"in_stock", "low_stock", "out_of_stock", "unknown"}
+
+
+def csv_unsafe(value):
+    """Reverse csv_safe() so re-imported names match the originals."""
+    if value.startswith("'") and value[1:2] in ("=", "+", "-", "@"):
+        return value[1:]
+    return value
+
+
+def parse_import_rows(text):
+    """Validate every row of an exported CSV before anything is written.
+    Returns (records, errors); errors are human-readable with line numbers."""
+    reader = csv.DictReader(io.StringIO(text))
+    missing = [col for col in IMPORT_COLUMNS if col not in (reader.fieldnames or [])]
+    if missing:
+        return [], [f"Missing column(s): {', '.join(missing)}"]
+
+    records, errors = [], []
+    for line, row in enumerate(reader, start=2):
+        url = (row["url"] or "").strip()
+        name = csv_unsafe((row["name"] or "").strip())
+        store = csv_unsafe((row["store"] or "").strip())
+        if not url or not name or not store:
+            errors.append(f"Line {line}: name, store and url are required")
+            continue
+
+        try:
+            price = float(row["price"])
+            if price < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors.append(f"Line {line}: invalid price '{row['price']}'")
+            continue
+
+        try:
+            checked = datetime.fromisoformat((row["checked_at"] or "").strip())
+        except ValueError:
+            errors.append(f"Line {line}: invalid checked_at '{row['checked_at']}'")
+            continue
+        if checked.tzinfo is None:
+            checked = checked.replace(tzinfo=timezone.utc)
+        checked_at = checked.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+        stock_status = (row["stock_status"] or "").strip()
+        if stock_status not in STOCK_STATUSES:
+            stock_status = "unknown"
+
+        records.append({
+            "url": url, "name": name, "store": store,
+            "checked_at": checked_at, "price": price, "stock_status": stock_status,
+        })
+
+    return records, errors
+
+
+@app.route("/api/import", methods=["POST"])
+@login_required
+def import_csv():
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        return jsonify({"error": "Choose a CSV file to import"}), 400
+
+    try:
+        text = upload.read().decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return jsonify({"error": "The file isn't a UTF-8 CSV"}), 400
+
+    records, errors = parse_import_rows(text)
+    if errors:
+        return jsonify({"error": "Nothing was imported. Fix these rows and try again.", "details": errors[:10]}), 400
+    if not records:
+        return jsonify({"error": "The file has no rows to import"}), 400
+
+    db = get_db()
+    # Products are matched by URL (ignoring a trailing slash), not by
+    # product_id, because ids differ between databases.
+    product_ids = {
+        row["url"].rstrip("/"): row["id"]
+        for row in db.execute("SELECT id, url FROM products")
+    }
+    existing_checks = {
+        (row["product_id"], row["checked_at"])
+        for row in db.execute("SELECT product_id, checked_at FROM price_history")
+    }
+
+    first_seen = {}
+    for record in records:
+        key = record["url"].rstrip("/")
+        first_seen[key] = min(first_seen.get(key, record["checked_at"]), record["checked_at"])
+
+    products_created = rows_added = rows_skipped = 0
+    for record in records:
+        key = record["url"].rstrip("/")
+        product_id = product_ids.get(key)
+        if product_id is None:
+            cursor = db.execute(
+                "INSERT INTO products (name, url, store, added_at) VALUES (?, ?, ?, ?)",
+                (record["name"], record["url"], record["store"], first_seen[key]),
+            )
+            product_id = product_ids[key] = cursor.lastrowid
+            products_created += 1
+
+        if (product_id, record["checked_at"]) in existing_checks:
+            rows_skipped += 1
+            continue
+
+        db.execute(
+            "INSERT INTO price_history (product_id, price, stock_status, checked_at) VALUES (?, ?, ?, ?)",
+            (product_id, record["price"], record["stock_status"], record["checked_at"]),
+        )
+        existing_checks.add((product_id, record["checked_at"]))
+        rows_added += 1
+
+    db.commit()
+    return jsonify({
+        "products_created": products_created,
+        "rows_added": rows_added,
+        "rows_skipped": rows_skipped,
+    })
 
 
 @app.route("/api/products", methods=["POST"])

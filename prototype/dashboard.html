@@ -251,6 +251,21 @@
 
   .topbar .sub { color: var(--ink-soft); font-size: 13px; }
 
+  .topbar-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+  .import-status {
+    margin: -8px 0 18px;
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    background: var(--good-soft);
+    color: var(--good);
+  }
+
+  .import-status.error { background: var(--danger-soft); color: var(--danger); }
+
+  .import-status ul { margin: 4px 0 0; padding-left: 18px; }
+
   .btn-primary {
     display: inline-flex;
     align-items: center;
@@ -725,7 +740,18 @@
           <h1>Dashboard</h1>
           <div class="sub" id="topbar-sub">Loading&hellip;</div>
         </div>
+        <div class="topbar-actions">
+          <button type="button" class="btn-secondary btn-small" id="import-btn" title="Add price history from an exported CSV file">
+            Import CSV
+          </button>
+          <input type="file" id="import-file" accept=".csv,text/csv" hidden>
+          <a class="btn-secondary btn-small" href="/api/export.csv" download title="Download every recorded price as a CSV file">
+            Export CSV
+          </a>
+        </div>
       </div>
+
+      <p class="import-status" id="import-status" hidden></p>
 
       <section>
         <div class="section-head">
@@ -828,6 +854,10 @@
   const storesSub = document.getElementById("stores-sub");
   const storeList = document.getElementById("store-list");
   const navItems = document.querySelectorAll(".nav-item");
+
+  const importBtn = document.getElementById("import-btn");
+  const importFile = document.getElementById("import-file");
+  const importStatus = document.getElementById("import-status");
 
   const STOCK_LABELS = {
     in_stock: { text: "In stock", cls: "in" },
@@ -1260,6 +1290,56 @@
   logoutBtn.addEventListener("click", async () => {
     await fetch("/api/logout", { method: "POST" });
     showLogin();
+  });
+
+  function showImportStatus(message, details, isError) {
+    importStatus.textContent = message;
+    if (details && details.length) {
+      const list = document.createElement("ul");
+      for (const detail of details) {
+        const item = document.createElement("li");
+        item.textContent = detail;
+        list.appendChild(item);
+      }
+      importStatus.appendChild(list);
+    }
+    importStatus.classList.toggle("error", isError);
+    importStatus.hidden = false;
+  }
+
+  importBtn.addEventListener("click", () => importFile.click());
+
+  importFile.addEventListener("change", async () => {
+    const file = importFile.files[0];
+    if (!file) return;
+
+    importBtn.disabled = true;
+    importBtn.textContent = "Importing…";
+    importStatus.hidden = true;
+
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const res = await fetch("/api/import", { method: "POST", body: formData });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showImportStatus(data.error || "Import failed.", data.details, true);
+        return;
+      }
+      const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+      let message = `Imported ${plural(data.rows_added, "price check")}`;
+      if (data.products_created) message += ` and ${plural(data.products_created, "new product")}`;
+      message += ".";
+      if (data.rows_skipped) message += ` Skipped ${plural(data.rows_skipped, "row")} already in the database.`;
+      showImportStatus(message, null, false);
+      loadProducts();
+    } catch {
+      showImportStatus("Import failed. Check your connection and try again.", null, true);
+    } finally {
+      importBtn.disabled = false;
+      importBtn.textContent = "Import CSV";
+      importFile.value = "";
+    }
   });
 
   addToggle.addEventListener("click", () => {

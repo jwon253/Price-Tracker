@@ -327,7 +327,8 @@ def scrape_computerlounge(url):
 
 # ---------- Briscoes ----------
 
-BRISCOES_AVAILABILITY_TO_STOCK_STATUS = {
+# Standard schema.org availability values, shared by Briscoes and ExtremePC.
+SCHEMA_AVAILABILITY_TO_STOCK_STATUS = {
     "https://schema.org/InStock": "in_stock",
     "http://schema.org/InStock": "in_stock",
     "https://schema.org/LimitedAvailability": "low_stock",
@@ -370,13 +371,54 @@ def scrape_briscoes(url):
     store = seller.get("name") if isinstance(seller, dict) else "Briscoes"
 
     availability = offers.get("availability") if offers else None
-    stock_status = BRISCOES_AVAILABILITY_TO_STOCK_STATUS.get(availability, "unknown")
+    stock_status = SCHEMA_AVAILABILITY_TO_STOCK_STATUS.get(availability, "unknown")
 
     return {
         "name": product.get("name"),
         "store": store or "Briscoes",
         "price": offers.get("price") if offers else None,
         "stock_status": stock_status,
+        "image_url": extract_image_url(product.get("image")),
+    }
+
+
+# ---------- ExtremePC ----------
+
+def scrape_extremepc(url):
+    """ExtremePC (BigCommerce) embeds schema.org Product JSON-LD whose
+    offers.price is the current selling price including any sale. The page
+    has two Product blocks for the same item and also lists related
+    products' prices in the HTML, so read only the first Product JSON-LD.
+    No seller name is included, so the store name is fixed."""
+    response = requests.get(url, headers=HEADERS, timeout=20)
+    response.raise_for_status()
+
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    product = None
+    for script in soup.find_all("script", {"type": "application/ld+json"}):
+        try:
+            data = json.loads(script.string)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(data, dict) and data.get("@type") == "Product":
+            product = data
+            break
+
+    if product is None:
+        raise ValueError(f"No Product JSON-LD found at {url}")
+
+    offers = product.get("offers")
+    if isinstance(offers, list):
+        offers = offers[0] if offers else None
+
+    availability = offers.get("availability") if offers else None
+
+    return {
+        "name": product.get("name"),
+        "store": "ExtremePC",
+        "price": offers.get("price") if offers else None,
+        "stock_status": SCHEMA_AVAILABILITY_TO_STOCK_STATUS.get(availability, "unknown"),
         "image_url": extract_image_url(product.get("image")),
     }
 
@@ -391,6 +433,7 @@ STORES = [
     {"name": "Foot Locker", "domain": "footlocker.co.nz", "url": "https://www.footlocker.co.nz", "scraper": scrape_footlocker},
     {"name": "Connor", "domain": "connor.com.au", "url": "https://www.connor.com.au/nz", "scraper": scrape_connor},
     {"name": "Briscoes", "domain": "briscoes.co.nz", "url": "https://www.briscoes.co.nz", "scraper": scrape_briscoes},
+    {"name": "ExtremePC", "domain": "extremepc.co.nz", "url": "https://extremepc.co.nz", "scraper": scrape_extremepc},
 ]
 
 STORES_BY_DOMAIN = {store["domain"]: store for store in STORES}

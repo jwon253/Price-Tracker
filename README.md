@@ -2,7 +2,7 @@
 
 A self-hosted price tracker for one user. Add a product URL and it records the price and stock status. A daily job re-checks every product, and the dashboard charts each product's price history.
 
-**Supported stores:** PB Tech, Computer Lounge, Foot Locker (NZ), Connor (NZ), Briscoes
+**Supported stores:** PB Tech, Computer Lounge, Foot Locker (NZ), Connor (NZ), Briscoes, ExtremePC
 
 Built with Flask, SQLite and a plain HTML/JS frontend.
 
@@ -77,6 +77,8 @@ All endpoints except `/api/login` require you to be logged in (session cookie).
 | `POST` | `/api/login` | `{"username", "password"}`, limited to 5 per minute |
 | `POST` | `/api/logout` | End the session |
 | `GET` | `/api/stores` | Supported stores with the number of products tracked from each |
+| `GET` | `/api/export.csv` | Download every recorded price check as a CSV file |
+| `POST` | `/api/import` | Upload an exported CSV (`file` field). Products are matched by URL, rows already present are skipped, and nothing is imported if any row is invalid |
 | `GET` | `/api/products` | All products with their latest price and stock status |
 | `POST` | `/api/products` | `{"url"}`: scrape and start tracking a product |
 | `DELETE` | `/api/products/<id>` | Stop tracking a product and delete its history |
