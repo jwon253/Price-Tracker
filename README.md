@@ -2,7 +2,7 @@
 
 A self-hosted price tracker for one user. Add a product URL and it records the price and stock status. A daily job re-checks every product, and the dashboard charts each product's price history.
 
-**Supported stores:** PB Tech, Computer Lounge, Foot Locker (NZ), Connor (NZ)
+**Supported stores:** PB Tech, Computer Lounge, Foot Locker (NZ), Connor (NZ), Briscoes
 
 Built with Flask, SQLite and a plain HTML/JS frontend.
 
@@ -76,6 +76,7 @@ All endpoints except `/api/login` require you to be logged in (session cookie).
 |---|---|---|
 | `POST` | `/api/login` | `{"username", "password"}`, limited to 5 per minute |
 | `POST` | `/api/logout` | End the session |
+| `GET` | `/api/stores` | Supported stores with the number of products tracked from each |
 | `GET` | `/api/products` | All products with their latest price and stock status |
 | `POST` | `/api/products` | `{"url"}`: scrape and start tracking a product |
 | `DELETE` | `/api/products/<id>` | Stop tracking a product and delete its history |
@@ -84,4 +85,4 @@ All endpoints except `/api/login` require you to be logged in (session cookie).
 
 ## Adding a store
 
-Add a `scrape_<store>(url)` function to `backend/scraper.py` that returns `name`, `store`, `price`, `stock_status` and `image_url`. Then register its domain in `scrape_product()`.
+Add a `scrape_<store>(url)` function to `backend/scraper.py` that returns `name`, `store`, `price`, `stock_status` and `image_url`. Then add it to the `STORES` list at the bottom of that file. The scraper and the Stores page both read from that list.

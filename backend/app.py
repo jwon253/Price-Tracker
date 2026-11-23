@@ -1,5 +1,6 @@
 import os
 import sqlite3
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from flask_login import login_required, login_user, logout_user
 
 from auth import User, login_manager, verify_credentials
 from models import DB_PATH, init_db, insert_price_check, update_product_image
-from scraper import scrape_product
+from scraper import STORES, scrape_product, store_domain
 
 load_dotenv()
 
@@ -79,6 +80,24 @@ def list_products():
         ORDER BY p.added_at DESC
     """).fetchall()
     return jsonify([dict(row) for row in rows])
+
+
+@app.route("/api/stores", methods=["GET"])
+@login_required
+def list_stores():
+    # Count by URL domain rather than the stored store name, since that name
+    # comes from each site's own markup and isn't guaranteed to match.
+    db = get_db()
+    counts = Counter(store_domain(row["url"]) for row in db.execute("SELECT url FROM products"))
+    return jsonify([
+        {
+            "name": store["name"],
+            "domain": store["domain"],
+            "url": store["url"],
+            "product_count": counts.get(store["domain"], 0),
+        }
+        for store in STORES
+    ])
 
 
 @app.route("/api/products", methods=["POST"])

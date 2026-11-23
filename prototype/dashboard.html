@@ -1,13 +1,13 @@
 <title>Price Tracker</title>
 <style>
   :root {
-    --paper: #F4F6F1;
+    --paper: #F1F5FA;
     --surface: #FFFFFF;
-    --surface-2: #EEF1EA;
-    --ink: #1C231D;
-    --ink-soft: #5B655C;
-    --ink-faint: #8A927F;
-    --line: #DBE1D6;
+    --surface-2: #E9EEF4;
+    --ink: #1B2430;
+    --ink-soft: #566273;
+    --ink-faint: #8792A2;
+    --line: #D6DEE8;
     --accent: #2F5D8A;
     --accent-ink: #FFFFFF;
     --accent-soft: #E4ECF4;
@@ -18,38 +18,27 @@
     --danger: #B23A34;
     --danger-soft: #F7DFDC;
     --shadow: 0 1px 2px rgba(28, 35, 29, 0.06), 0 1px 1px rgba(28, 35, 29, 0.04);
+
+    --sidebar-bg: #2C3A4B;
+    --sidebar-line: #3D4C5F;
+    --sidebar-ink: #B7C3D1;
+    --sidebar-ink-strong: #FFFFFF;
+    --sidebar-hover: #364659;
+    --sidebar-active-bg: #405672;
+    --sidebar-accent: #8DB4DE;
+    --sidebar-accent-ink: #14202C;
+    --sidebar-danger: #F0A39E;
   }
 
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --paper: #14170F;
-      --surface: #1B1F16;
-      --surface-2: #20251A;
-      --ink: #E7EAE1;
-      --ink-soft: #9CA696; 
-      --ink-faint: #6D7666;
-      --line: #2C3325;
-      --accent: #7EA8D6;
-      --accent-ink: #0F1610;
-      --accent-soft: #223448;
-      --good: #4FAE84;
-      --good-soft: #16352A;
-      --warn: #D89A4A;
-      --warn-soft: #3A2A14;
-      --danger: #E07872;
-      --danger-soft: #3A1E1C;
-      --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 1px rgba(0, 0, 0, 0.25);
-    }
-  }
-
+  /* Light theme is always used. Add data-theme="dark" to the root element to opt into dark. */
   :root[data-theme="dark"] {
-    --paper: #14170F;
-    --surface: #1B1F16;
-    --surface-2: #20251A;
-    --ink: #E7EAE1;
-    --ink-soft: #9CA696;
-    --ink-faint: #6D7666;
-    --line: #2C3325;
+    --paper: #131A23;
+    --surface: #1A222D;
+    --surface-2: #202935;
+    --ink: #E4E9F0;
+    --ink-soft: #9AA6B5;
+    --ink-faint: #6B7685;
+    --line: #2A3441;
     --accent: #7EA8D6;
     --accent-ink: #0F1610;
     --accent-soft: #223448;
@@ -60,6 +49,11 @@
     --danger: #E07872;
     --danger-soft: #3A1E1C;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 1px rgba(0, 0, 0, 0.25);
+
+    --sidebar-bg: #1C2532;
+    --sidebar-line: #2B3646;
+    --sidebar-hover: #253041;
+    --sidebar-active-bg: #2F4058;
   }
 
   * { box-sizing: border-box; }
@@ -150,8 +144,9 @@
 
   /* ---------- Sidebar ---------- */
   .sidebar {
-    background: var(--surface-2);
-    border-right: 1px solid var(--line);
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--sidebar-line);
+    color: var(--sidebar-ink);
     padding: 20px 14px;
     display: flex;
     flex-direction: column;
@@ -181,13 +176,20 @@
 
   .brand .mark svg, .login-brand .mark svg { width: 13px; height: 13px; }
 
+  .sidebar .brand { color: var(--sidebar-ink-strong); }
+
+  .sidebar .brand .mark {
+    background: var(--sidebar-accent);
+    color: var(--sidebar-accent-ink);
+  }
+
   .nav-item {
     display: flex;
     align-items: center;
     gap: 10px;
     padding: 9px 10px;
     border-radius: 7px;
-    color: var(--ink-soft);
+    color: var(--sidebar-ink);
     font-weight: 500;
     cursor: default;
   }
@@ -202,24 +204,24 @@
   }
 
   .nav-item.active {
-    background: var(--accent-soft);
-    color: var(--accent);
+    background: var(--sidebar-active-bg);
+    color: var(--sidebar-ink-strong);
     font-weight: 600;
   }
 
-  .nav-item:not(.active):hover { background: var(--surface); color: var(--ink); }
+  .nav-item:not(.active):hover { background: var(--sidebar-hover); color: var(--sidebar-ink-strong); }
 
   .sidebar-footer {
     margin-top: auto;
     padding: 10px;
-    border-top: 1px solid var(--line);
+    border-top: 1px solid var(--sidebar-line);
     padding-top: 14px;
   }
 
   .logout-btn {
     background: none;
     border: none;
-    color: var(--ink-faint);
+    color: var(--sidebar-ink);
     font: inherit;
     font-size: 12px;
     font-weight: 600;
@@ -227,7 +229,7 @@
     padding: 0;
   }
 
-  .logout-btn:hover { color: var(--danger); }
+  .logout-btn:hover { color: var(--sidebar-danger); }
 
   /* ---------- Main ---------- */
   .main { padding: 28px 32px 48px; max-width: 1280px; }
@@ -634,6 +636,38 @@
     opacity: 0.8;
     font-size: 11px;
   }
+
+  /* ---------- Stores ---------- */
+  .store-mark {
+    width: 44px;
+    height: 44px;
+    flex: none;
+    border-radius: 8px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+    font-size: 17px;
+  }
+
+  .store-name {
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  .store-domain {
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+
+  .store-domain:hover { color: var(--accent); text-decoration: underline; }
+
+  .store-count {
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.1;
+  }
 </style>
 
 <div class="login-view" id="login-view">
@@ -662,7 +696,7 @@
       Price Tracker
     </div>
 
-    <a class="nav-item active" href="#">
+    <a class="nav-item active" href="#/" data-view="dashboard">
       <svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>
       Dashboard
     </a>
@@ -670,7 +704,7 @@
       <svg viewBox="0 0 24 24"><path d="M4 4 L12 4 L20 12 L12 20 L4 12 Z"/><circle cx="8" cy="8" r="1.4" fill="currentColor" stroke="none"/></svg>
       Products
     </a>
-    <a class="nav-item" href="#">
+    <a class="nav-item" href="#/stores" data-view="stores">
       <svg viewBox="0 0 24 24"><path d="M3 9 L4 4 L20 4 L21 9"/><path d="M4 9 L20 9 L20 20 L4 20 Z"/><path d="M9 20 L9 14 L15 14 L15 20"/></svg>
       Stores
     </a>
@@ -749,6 +783,17 @@
         <div class="chart-container" id="chart-container"></div>
       </div>
     </section>
+
+    <section id="stores-view" hidden>
+      <div class="topbar">
+        <div>
+          <h1>Stores</h1>
+          <div class="sub" id="stores-sub">Loading&hellip;</div>
+        </div>
+      </div>
+
+      <div class="products" id="store-list"></div>
+    </section>
   </main>
 </div>
 
@@ -778,6 +823,11 @@
   const detailPrice = document.getElementById("detail-price");
   const detailChecked = document.getElementById("detail-checked");
   const chartContainer = document.getElementById("chart-container");
+
+  const storesView = document.getElementById("stores-view");
+  const storesSub = document.getElementById("stores-sub");
+  const storeList = document.getElementById("store-list");
+  const navItems = document.querySelectorAll(".nav-item");
 
   const STOCK_LABELS = {
     in_stock: { text: "In stock", cls: "in" },
@@ -1091,16 +1141,64 @@
     route(products);
   }
 
+  function currentRoute() {
+    const productMatch = location.hash.match(/^#\/product\/(\d+)/);
+    if (productMatch) return { view: "detail", id: Number(productMatch[1]) };
+    if (location.hash === "#/stores") return { view: "stores" };
+    return { view: "dashboard" };
+  }
+
   function route(products) {
-    const match = location.hash.match(/^#\/product\/(\d+)/);
-    if (match) {
-      dashboardView.hidden = true;
-      productDetailView.hidden = false;
-      showProductDetail(Number(match[1]));
-    } else {
-      productDetailView.hidden = true;
-      dashboardView.hidden = false;
-      renderProducts(products);
+    const r = currentRoute();
+    dashboardView.hidden = r.view !== "dashboard";
+    productDetailView.hidden = r.view !== "detail";
+    storesView.hidden = r.view !== "stores";
+
+    // The product detail page belongs under Dashboard in the sidebar.
+    const activeNav = r.view === "detail" ? "dashboard" : r.view;
+    navItems.forEach((item) => item.classList.toggle("active", item.dataset.view === activeNav));
+
+    if (r.view === "detail") showProductDetail(r.id);
+    else if (r.view === "stores") showStores();
+    else renderProducts(products);
+  }
+
+  async function showStores() {
+    storeList.innerHTML = "";
+    storesSub.textContent = "Loading…";
+
+    const res = await fetch("/api/stores");
+    if (!res.ok) {
+      storesSub.textContent = "Could not load stores.";
+      return;
+    }
+
+    const stores = await res.json();
+    const tracked = stores.reduce((sum, s) => sum + s.product_count, 0);
+    storesSub.textContent = `${stores.length} supported store${stores.length === 1 ? "" : "s"} · ${tracked} product${tracked === 1 ? "" : "s"} tracked`;
+
+    for (const store of stores) {
+      const card = document.createElement("article");
+      card.className = "card";
+      card.innerHTML = `
+        <div class="store-mark"></div>
+        <div class="card-info">
+          <span class="store-name"></span>
+          <a class="store-domain" target="_blank" rel="noopener noreferrer"></a>
+        </div>
+        <div class="status">
+          <span class="store-count num"></span>
+          <span class="checked"></span>
+        </div>
+      `;
+      card.querySelector(".store-mark").textContent = store.name.charAt(0);
+      card.querySelector(".store-name").textContent = store.name;
+      const link = card.querySelector(".store-domain");
+      link.textContent = store.domain;
+      link.href = store.url;
+      card.querySelector(".store-count").textContent = store.product_count;
+      card.querySelector(".checked").textContent = store.product_count === 1 ? "product" : "products";
+      storeList.appendChild(card);
     }
   }
 

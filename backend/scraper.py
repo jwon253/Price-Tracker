@@ -17,18 +17,15 @@ def scrape_product(url):
     GraphQL API), so each gets its own dedicated scraper rather than one
     generalized parser trying to handle every shape.
     """
-    domain = urlparse(url).netloc.lower().removeprefix("www.")
+    domain = store_domain(url)
+    store = STORES_BY_DOMAIN.get(domain)
+    if store is None:
+        raise ValueError(f"No scraper available for '{domain}'")
+    return store["scraper"](url)
 
-    if domain == "pbtech.co.nz":
-        return scrape_pbtech(url)
-    if domain == "connor.com.au":
-        return scrape_connor(url)
-    if domain == "footlocker.co.nz":
-        return scrape_footlocker(url)
-    if domain == "computerlounge.co.nz":
-        return scrape_computerlounge(url)
 
-    raise ValueError(f"No scraper available for '{domain}'")
+def store_domain(url):
+    return urlparse(url).netloc.lower().removeprefix("www.")
 
 
 def extract_image_url(image):
@@ -326,6 +323,77 @@ def scrape_computerlounge(url):
         "stock_status": stock_status,
         "image_url": extract_image_url(product.get("image")),
     }
+
+
+# ---------- Briscoes ----------
+
+BRISCOES_AVAILABILITY_TO_STOCK_STATUS = {
+    "https://schema.org/InStock": "in_stock",
+    "http://schema.org/InStock": "in_stock",
+    "https://schema.org/LimitedAvailability": "low_stock",
+    "http://schema.org/LimitedAvailability": "low_stock",
+    "https://schema.org/OutOfStock": "out_of_stock",
+    "http://schema.org/OutOfStock": "out_of_stock",
+    "https://schema.org/Discontinued": "out_of_stock",
+    "http://schema.org/Discontinued": "out_of_stock",
+}
+
+
+def scrape_briscoes(url):
+    """Briscoes (Magento PWA) embeds schema.org Product JSON-LD. Its
+    offers.price is the current selling price including any sale; the
+    pre-sale price sits separately in offers.priceSpecification as a
+    ListPrice. Club (member) prices aren't included."""
+    response = requests.get(url, headers=HEADERS, timeout=20)
+    response.raise_for_status()
+
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    product = None
+    for script in soup.find_all("script", {"type": "application/ld+json"}):
+        try:
+            data = json.loads(script.string)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(data, dict) and data.get("@type") == "Product":
+            product = data
+            break
+
+    if product is None:
+        raise ValueError(f"No Product JSON-LD found at {url}")
+
+    offers = product.get("offers")
+    if isinstance(offers, list):
+        offers = offers[0] if offers else None
+
+    seller = offers.get("seller") if offers else None
+    store = seller.get("name") if isinstance(seller, dict) else "Briscoes"
+
+    availability = offers.get("availability") if offers else None
+    stock_status = BRISCOES_AVAILABILITY_TO_STOCK_STATUS.get(availability, "unknown")
+
+    return {
+        "name": product.get("name"),
+        "store": store or "Briscoes",
+        "price": offers.get("price") if offers else None,
+        "stock_status": stock_status,
+        "image_url": extract_image_url(product.get("image")),
+    }
+
+
+# ---------- Supported stores ----------
+
+# Single source of truth for which stores can be scraped: scrape_product()
+# dispatches on "domain", and the /api/stores endpoint lists these.
+STORES = [
+    {"name": "PB Tech", "domain": "pbtech.co.nz", "url": "https://www.pbtech.co.nz", "scraper": scrape_pbtech},
+    {"name": "Computer Lounge", "domain": "computerlounge.co.nz", "url": "https://www.computerlounge.co.nz", "scraper": scrape_computerlounge},
+    {"name": "Foot Locker", "domain": "footlocker.co.nz", "url": "https://www.footlocker.co.nz", "scraper": scrape_footlocker},
+    {"name": "Connor", "domain": "connor.com.au", "url": "https://www.connor.com.au/nz", "scraper": scrape_connor},
+    {"name": "Briscoes", "domain": "briscoes.co.nz", "url": "https://www.briscoes.co.nz", "scraper": scrape_briscoes},
+]
+
+STORES_BY_DOMAIN = {store["domain"]: store for store in STORES}
 
 
 if __name__ == "__main__":
