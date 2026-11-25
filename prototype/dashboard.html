@@ -1049,13 +1049,25 @@
 
   const THUMB_PLACEHOLDER = `<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="2"/><line x1="4" y1="10" x2="20" y2="10"/></svg>`;
 
+  // Prices are shown rounded up to the whole dollar ($199.99 → $200). The
+  // exact prices are still stored, exported and used to draw the chart line.
+  // Rounding to cents first stops float noise like 19.000000001 becoming $20.
+  function roundUp(n) {
+    return Math.ceil(Math.round(Number(n) * 100) / 100);
+  }
+
+  function money(n) {
+    return `$${roundUp(n).toLocaleString()}`;
+  }
+
   // Returns null when the store didn't report a regular price, so no badge
-  // is shown rather than guessing.
+  // is shown rather than guessing. Compares the rounded prices, so a card
+  // never says "$200, was $200".
   function dealInfo(price, regularPrice) {
     if (price == null || regularPrice == null) return null;
-    const now = Number(price);
-    const regular = Number(regularPrice);
-    if (regular > now + 0.005) {
+    const now = roundUp(price);
+    const regular = roundUp(regularPrice);
+    if (regular > now) {
       return { sale: true, was: regular, pct: Math.round((1 - now / regular) * 100) };
     }
     return { sale: false };
@@ -1078,12 +1090,12 @@
     priceEl.classList.add("on-sale");
     const was = document.createElement("span");
     was.className = "was-price num";
-    was.textContent = `$${deal.was.toFixed(2)}`;
+    was.textContent = money(deal.was);
     const pct = document.createElement("span");
     pct.className = "deal-pct";
     pct.textContent = deal.pct >= 1 ? `−${deal.pct}%` : "Sale";
     note.append(was, pct);
-    note.title = `On sale — regular price $${deal.was.toFixed(2)}`;
+    note.title = `On sale — regular price ${money(deal.was)}`;
   }
 
   // Only http(s) links are made clickable, so an imported "javascript:" URL
@@ -1215,7 +1227,7 @@
       }
       setStoreLink(card.querySelector(".store-link"), product.store || "Unknown store", product.url);
       card.querySelector(".price").textContent =
-        product.price != null ? `$${Number(product.price).toFixed(2)}` : "—";
+        product.price != null ? money(product.price) : "—";
       renderPriceNote(card.querySelector(".price-note"), card.querySelector(".price"), product.price, product.regular_price);
       card.querySelector(".checked").textContent = product.checked_at
         ? `checked ${new Date(product.checked_at).toLocaleDateString()}`
@@ -1263,7 +1275,7 @@
     }
     detailStock.textContent = stock.text;
     detailStock.className = `stock-pill ${stock.cls}`;
-    detailPrice.textContent = latest ? `$${Number(latest.price).toFixed(2)}` : "—";
+    detailPrice.textContent = latest ? money(latest.price) : "—";
     renderPriceNote(detailPriceNote, detailPrice, latest && latest.price, latest && latest.regular_price);
     detailChecked.textContent = latest
       ? `checked ${new Date(latest.checked_at).toLocaleDateString()}`
@@ -1278,8 +1290,6 @@
   // ---------- Purchase date ----------
   let detailProduct = null;
   let detailHistory = [];
-
-  const money = (n) => `$${Number(n).toFixed(2)}`;
 
   function localDateKey(d) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -1321,13 +1331,14 @@
         purchaseSummary.textContent = `Bought ${dateText} for ${money(info.price)}${info.scraped ? " (scraped that day)" : ""}.`;
         const latest = detailHistory[detailHistory.length - 1];
         if (latest) {
-          const diff = Number(latest.price) - info.price;
+          const paid = roundUp(info.price);
+          const diff = roundUp(latest.price) - paid;
           const change = document.createElement("span");
           change.className = "purchase-change";
-          if (Math.abs(diff) < 0.005) {
+          if (diff === 0) {
             change.textContent = "Same price now.";
           } else {
-            const pct = info.price > 0 ? ` (${diff < 0 ? "−" : "+"}${Math.round((Math.abs(diff) / info.price) * 1000) / 10}%)` : "";
+            const pct = paid > 0 ? ` (${diff < 0 ? "−" : "+"}${Math.round((Math.abs(diff) / paid) * 1000) / 10}%)` : "";
             change.textContent = `Now ${money(latest.price)}: ${diff < 0 ? "▼" : "▲"} ${money(Math.abs(diff))}${pct} ${diff < 0 ? "lower" : "higher"}.`;
             change.classList.add(diff < 0 ? "down" : "up");
           }
@@ -1593,7 +1604,7 @@
       tooltip.innerHTML = "";
       const valueEl = document.createElement("div");
       valueEl.className = "chart-tooltip-value";
-      valueEl.textContent = `$${points[nearest].price.toFixed(2)}`;
+      valueEl.textContent = money(points[nearest].price);
       const dateEl = document.createElement("div");
       dateEl.className = "chart-tooltip-date";
       dateEl.textContent = points[nearest].date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
